@@ -60,6 +60,8 @@ const Bell = (p) => <Icon {...p}><path d="M6 8a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 
 const Settings = (p) => <Icon {...p}><line x1="4" y1="7" x2="20" y2="7" /><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none" /><line x1="4" y1="14" x2="20" y2="14" /><circle cx="16" cy="14" r="2" fill="currentColor" stroke="none" /><line x1="4" y1="19" x2="20" y2="19" /><circle cx="11" cy="19" r="2" fill="currentColor" stroke="none" /></Icon>;
 const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><polyline points="12 7.5 12 12 15.5 14" /></Icon>;
 const LayoutGrid = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></Icon>;
+const Pencil = (p) => <Icon {...p}><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z" /></Icon>;
+const ArrowDown = (p) => <Icon {...p}><line x1="12" y1="4" x2="12" y2="18" /><polyline points="6 13 12 19 18 13" /></Icon>;
 function Circle({ size = 20, fill = "none", color = "currentColor", strokeWidth = 2 }) {
   return <svg width={size} height={size} viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill={fill} stroke={color} strokeWidth={strokeWidth} /></svg>;
 }
@@ -283,8 +285,7 @@ function uid() { return `id_${Date.now()}_${Math.random().toString(36).slice(2, 
 /* =========================================================================
    STORAGE
    ========================================================================= */
-
-const STORAGE_KEYS = ["goals", "tasks", "habits", "notes", "reviews", "categories", "trackerGroups", "trackerItems", "trackerLogs"];
+const STORAGE_KEYS = ["goals", "tasks", "habits", "notes", "reviews", "categories", "trackerGroups", "trackerItems", "trackerLogs", "settings"];
 
 const LS_PREFIX = "gahnama:";
 function loadAll() {
@@ -304,17 +305,66 @@ function persist(key, value) {
   catch (e) { console.error("storage error", key, e); }
 }
 
+const DEFAULT_SETTINGS = { autoRollover: false };
+
+/* =========================================================================
+   GOAL PROGRESS HELPERS
+   A goal can be "simple" (manual checkbox) or measurable by count or time.
+   Measurable goals accumulate daily entries in progressLog and complete
+   themselves once the total reaches the target.
+   ========================================================================= */
+
+function isMeasurable(goal) { return goal.targetType === "count" || goal.targetType === "time"; }
+function goalProgress(goal) {
+  if (!goal.progressLog) return 0;
+  let sum = 0;
+  for (const k in goal.progressLog) sum += goal.progressLog[k] || 0;
+  return sum;
+}
+function goalProgressText(goal) {
+  const p = goalProgress(goal);
+  const t = goal.targetValue || 0;
+  if (goal.targetType === "time") return `${formatMinutes(p)} از ${formatMinutes(t)}`;
+  return `${toFa(p)} از ${toFa(t)}${goal.unit ? " " + goal.unit : ""}`;
+}
+function goalProgressPct(goal) {
+  const t = goal.targetValue || 0;
+  if (!t) return 0;
+  return Math.min(100, (goalProgress(goal) / t) * 100);
+}
+function formatAmount(type, value, unit) {
+  if (type === "time") return formatMinutes(value);
+  return `${toFa(value)}${unit ? " " + unit : ""}`;
+}
+
+/* =========================================================================
+   ROLLOVER — carrying unfinished items forward. Tasks roll day-to-day,
+   weekly goals week-to-week, monthly goals month-to-month. String keys are
+   zero-padded, so plain "<" comparison is a valid chronological test.
+   ========================================================================= */
+
+function findOverdueTasks(tasks, todayKey) {
+  return tasks.filter((t) => !t.completed && t.dateKey < todayKey);
+}
+function findOverdueGoals(goals, curMonthKey, curWeekKey) {
+  return goals.filter((g) => {
+    if (g.completed) return false;
+    if (g.type === "monthly") return g.monthKey && g.monthKey < curMonthKey;
+    if (g.type === "weekly") return g.weekKey && g.weekKey < curWeekKey;
+    return false;
+  });
+}
+
 /* =========================================================================
    REMINDER HELPERS — best-effort browser notification + audible beep +
-   in-app toast. Since this runs inside a browser tab (not a native app),
-   these only fire while the app is open.
+   in-app toast. Running in a browser tab, these fire while the app is open.
    ========================================================================= */
 
 function requestNotifyPermission() {
   try {
     if (typeof Notification === "undefined") return;
     if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
-  } catch (e) { /* not available in this environment */ }
+  } catch (e) { /* not available */ }
 }
 function fireBrowserNotification(title, body) {
   try {
@@ -421,6 +471,69 @@ function CategoryPicker({ value, onChange }) {
   );
 }
 
+/* =========================================================================
+   DURATION PICKER — hours + minutes wheels for every time-based entry.
+   ========================================================================= */
+
+function DurationPicker({ hours, minutes, setHours, setMinutes }) {
+  return (
+    <div className="duration-picker">
+      <div className="dp-col">
+        <span className="dp-label">ساعت</span>
+        <select className="dp-select" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
+          {Array.from({ length: 25 }, (_, i) => i).map((h) => <option key={h} value={h}>{toFa(h)}</option>)}
+        </select>
+      </div>
+      <span className="dp-sep">:</span>
+      <div className="dp-col">
+        <span className="dp-label">دقیقه</span>
+        <select className="dp-select" value={minutes} onChange={(e) => setMinutes(Number(e.target.value))}>
+          {Array.from({ length: 60 }, (_, i) => i).map((m) => <option key={m} value={m}>{toFa(String(m).padStart(2, "0"))}</option>)}
+        </select>
+      </div>
+    </div>
+  );
+}
+
+function DurationSheet({ open, onClose, title, currentMinutes, onAdd, onSet, addLabel = "افزودن به مجموع" }) {
+  const [hours, setHours] = useState(0);
+  const [minutes, setMinutes] = useState(0);
+  useEffect(() => { if (open) { setHours(0); setMinutes(0); } }, [open]);
+  const total = hours * 60 + minutes;
+  return (
+    <Sheet open={open} onClose={onClose} title={title}>
+      {currentMinutes !== undefined && (
+        <p className="dp-current">مقدار فعلی: <b>{formatMinutes(currentMinutes)}</b></p>
+      )}
+      <DurationPicker hours={hours} minutes={minutes} setHours={setHours} setMinutes={setMinutes} />
+      <button className="primary-btn" disabled={total === 0} onClick={() => { onAdd(total); onClose(); }}>{addLabel}</button>
+      {onSet && (
+        <button className="secondary-btn" onClick={() => { onSet(total); onClose(); }}>جایگزینی مقدار کل با {formatMinutes(total)}</button>
+      )}
+    </Sheet>
+  );
+}
+
+function CountSheet({ open, onClose, title, unit, currentValue, onAdd, onSet }) {
+  const [val, setVal] = useState(1);
+  useEffect(() => { if (open) setVal(1); }, [open]);
+  return (
+    <Sheet open={open} onClose={onClose} title={title}>
+      {currentValue !== undefined && (
+        <p className="dp-current">مقدار فعلی: <b>{toFa(currentValue)}{unit ? " " + unit : ""}</b></p>
+      )}
+      <label className="field-label">مقدار{unit ? ` (${unit})` : ""}</label>
+      <div className="big-stepper">
+        <button onClick={() => setVal((v) => Math.max(0, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
+        <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={val} onChange={(e) => setVal(Math.max(0, Number(e.target.value) || 0))} />
+        <button onClick={() => setVal((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
+      </div>
+      <button className="primary-btn" disabled={val === 0} onClick={() => { onAdd(val); onClose(); }}>افزودن به مجموع</button>
+      {onSet && <button className="secondary-btn" onClick={() => { onSet(val); onClose(); }}>جایگزینی مقدار کل با {toFa(val)}{unit ? " " + unit : ""}</button>}
+    </Sheet>
+  );
+}
+
 function Toast({ toast, onClose }) {
   useEffect(() => {
     if (!toast) return;
@@ -436,11 +549,16 @@ function Toast({ toast, onClose }) {
   );
 }
 
-function CategorySettingsSheet({ open, onClose, categories, addCategory, deleteCategory }) {
+/* =========================================================================
+   SETTINGS SHEET — categories + rollover behaviour
+   ========================================================================= */
+
+function SettingsSheet({ open, onClose, categories, addCategory, deleteCategory, settings, updateSettings }) {
   const [label, setLabel] = useState("");
   const [colorKey, setColorKey] = useState("primary");
   return (
-    <Sheet open={open} onClose={onClose} title="دسته‌بندی‌ها">
+    <Sheet open={open} onClose={onClose} title="تنظیمات">
+      <h4 className="settings-h">دسته‌بندی‌ها</h4>
       <ul className="cat-manage-list">
         {categories.map((c) => {
           const palette = COLOR_PALETTE[c.colorKey] || COLOR_PALETTE.slate;
@@ -448,9 +566,7 @@ function CategorySettingsSheet({ open, onClose, categories, addCategory, deleteC
             <li key={c.id} className="cat-manage-row">
               <span className="cat-dot" style={{ background: palette.hex }} />
               <span className="cat-manage-label">{c.label}</span>
-              {categories.length > 1 && (
-                <IconBtn onClick={() => deleteCategory(c.id)} label="حذف"><Trash2 size={15} /></IconBtn>
-              )}
+              {categories.length > 1 && <IconBtn onClick={() => deleteCategory(c.id)} label="حذف"><Trash2 size={15} /></IconBtn>}
             </li>
           );
         })}
@@ -459,28 +575,30 @@ function CategorySettingsSheet({ open, onClose, categories, addCategory, deleteC
       <input className="text-input" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="مثلاً: خانواده" />
       <div className="swatch-row">
         {Object.keys(COLOR_PALETTE).map((k) => (
-          <button
-            key={k} type="button" aria-label={k}
-            className={"swatch" + (colorKey === k ? " swatch-active" : "")}
-            style={{ background: COLOR_PALETTE[k].hex }}
-            onClick={() => setColorKey(k)}
-          />
+          <button key={k} type="button" aria-label={k} className={"swatch" + (colorKey === k ? " swatch-active" : "")}
+            style={{ background: COLOR_PALETTE[k].hex }} onClick={() => setColorKey(k)} />
         ))}
       </div>
-      <button
-        className="primary-btn" disabled={!label.trim()}
-        onClick={() => { if (label.trim()) { addCategory({ id: uid(), label: label.trim(), colorKey }); setLabel(""); setColorKey("primary"); } }}
-      >
+      <button className="primary-btn" disabled={!label.trim()}
+        onClick={() => { if (label.trim()) { addCategory({ id: uid(), label: label.trim(), colorKey }); setLabel(""); setColorKey("primary"); } }}>
         افزودن دسته‌بندی
       </button>
+
+      <h4 className="settings-h settings-h-gap">انتقال موارد ناتمام</h4>
+      <label className="toggle-row">
+        <input type="checkbox" checked={!!settings.autoRollover} onChange={(e) => updateSettings({ autoRollover: e.target.checked })} />
+        <span>
+          انتقال خودکار هنگام باز کردن برنامه
+          <span className="toggle-sub">اگر خاموش باشد، پیشنهاد انتقال را می‌بینی و خودت تصمیم می‌گیری.</span>
+        </span>
+      </label>
     </Sheet>
   );
 }
 
 /* =========================================================================
-   SEASON RING — signature header element. The Jalali calendar's 12 months
-   split into exactly 4 three-month seasons, a structural fact Gregorian
-   months don't share. The ring makes that division visible.
+   SEASON RING — the Jalali year splits into exactly 4 three-month seasons,
+   a structural fact Gregorian months don't share. The ring shows it.
    ========================================================================= */
 
 function SeasonRing({ jy, jm, jd }) {
@@ -541,43 +659,67 @@ function BottomNav({ tab, setTab }) {
   );
 }
 
+function RolloverBanner({ count, label, onRollover }) {
+  if (!count) return null;
+  return (
+    <div className="rollover-banner">
+      <ArrowDown size={15} />
+      <span>{toFa(count)} {label}</span>
+      <button onClick={onRollover}>انتقال</button>
+    </div>
+  );
+}
 /* =========================================================================
-   SHARED, MEMOIZED ROW COMPONENTS
-   Each row only re-renders when its own props change — toggling one task
-   does not re-render every other row in the list.
+   ROW COMPONENTS — each memoized so toggling one row doesn't re-render the
+   whole list. Tapping the body opens the detail sheet; the circle toggles.
    ========================================================================= */
 
-const TaskRow = memo(function TaskRow({ task, onToggle, onDelete }) {
+const TaskRow = memo(function TaskRow({ task, onToggle, onOpen }) {
   return (
     <li className="list-row">
-      <button className={"check-circle" + (task.completed ? " check-circle-done" : "")} onClick={() => onToggle(task.id)}>
+      <button className={"check-circle" + (task.completed ? " check-circle-done" : "")} onClick={() => onToggle(task.id)} aria-label="تغییر وضعیت">
         {task.completed && <Check size={13} strokeWidth={3} />}
       </button>
-      <span className={"list-text" + (task.completed ? " list-text-done" : "")}>{task.title}</span>
+      <button className="row-body" onClick={() => onOpen({ kind: "task", id: task.id })}>
+        <span className={"list-text" + (task.completed ? " list-text-done" : "")}>{task.title}</span>
+        {task.description && <span className="row-desc">{task.description}</span>}
+      </button>
+      {task.rolloverCount > 0 && <span className="rolled-badge" title="منتقل‌شده">{toFa(task.rolloverCount)}↩</span>}
       {task.reminderTime && <span className="reminder-badge"><Clock size={11} />{toFa(task.reminderTime)}</span>}
       <CategoryChip id={task.category} />
-      {onDelete && <IconBtn onClick={() => onDelete(task.id)} label="حذف"><Trash2 size={15} /></IconBtn>}
     </li>
   );
 });
 
-const GoalRow = memo(function GoalRow({ goal, linkedTitle, onToggle, onDelete }) {
+const GoalRow = memo(function GoalRow({ goal, linkedTitle, onToggle, onOpen }) {
+  const measurable = isMeasurable(goal);
   return (
     <li className="list-row goal-row">
-      <button className={"check-circle" + (goal.completed ? " check-circle-done" : "")} onClick={() => onToggle(goal.id)}>
+      <button
+        className={"check-circle" + (goal.completed ? " check-circle-done" : "")}
+        onClick={() => (measurable ? onOpen({ kind: "goal", id: goal.id }) : onToggle(goal.id))}
+        aria-label={measurable ? "ثبت پیشرفت" : "تغییر وضعیت"}
+      >
         {goal.completed && <Check size={13} strokeWidth={3} />}
       </button>
-      <div className="goal-row-main">
+      <button className="row-body" onClick={() => onOpen({ kind: "goal", id: goal.id })}>
         <span className={"list-text" + (goal.completed ? " list-text-done" : "")}>{goal.title}</span>
+        {goal.description && <span className="row-desc">{goal.description}</span>}
         {linkedTitle && <span className="goal-linked">مرتبط با: {linkedTitle}</span>}
-      </div>
+        {measurable && (
+          <span className="row-progress">
+            <ProgressBar value={goalProgressPct(goal)} />
+            <span className="row-progress-text">{goalProgressText(goal)}</span>
+          </span>
+        )}
+      </button>
+      {goal.rolloverCount > 0 && <span className="rolled-badge" title="منتقل‌شده">{toFa(goal.rolloverCount)}↩</span>}
       <CategoryChip id={goal.category} />
-      <IconBtn onClick={() => onDelete(goal.id)} label="حذف"><Trash2 size={15} /></IconBtn>
     </li>
   );
 });
 
-const HabitRow = memo(function HabitRow({ habit, today, onToggle, onDelete }) {
+const HabitRow = memo(function HabitRow({ habit, today, onToggle, onOpen }) {
   const tKey = dateKey(today.jy, today.jm, today.jd);
   const done = !!habit.completions[tKey];
   const streak = habitStreak(habit, today);
@@ -591,12 +733,14 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onDelete }) {
   return (
     <li className="habit-card">
       <div className="habit-top">
-        <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => onToggle(habit.id, tKey)}>
+        <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => onToggle(habit.id, tKey)} aria-label="تغییر وضعیت">
           {done && <Check size={13} strokeWidth={3} />}
         </button>
-        <span className="list-text">{habit.title}</span>
+        <button className="row-body" onClick={() => onOpen({ kind: "habit", id: habit.id })}>
+          <span className="list-text">{habit.title}</span>
+          {habit.description && <span className="row-desc">{habit.description}</span>}
+        </button>
         <CategoryChip id={habit.category} />
-        <IconBtn onClick={() => onDelete(habit.id)} label="حذف"><Trash2 size={15} /></IconBtn>
       </div>
       <div className="habit-bottom">
         <div className="habit-streak">
@@ -626,10 +770,416 @@ function habitStreak(habit, today) {
 }
 
 /* =========================================================================
+   DETAIL SHEETS — opened by tapping any row. Show every field, allow
+   editing, deleting, and (for measurable goals) logging progress.
+   ========================================================================= */
+
+function DetailField({ label, children }) {
+  if (children === null || children === undefined || children === "") return null;
+  return (
+    <div className="detail-field">
+      <span className="detail-label">{label}</span>
+      <span className="detail-value">{children}</span>
+    </div>
+  );
+}
+
+function DetailActions({ onEdit, onDelete }) {
+  return (
+    <div className="detail-actions">
+      <button className="secondary-btn" onClick={onEdit}><Pencil size={14} /> ویرایش</button>
+      <button className="danger-btn" onClick={onDelete}><Trash2 size={14} /> حذف</button>
+    </div>
+  );
+}
+
+function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgress, onClearLogEntry }) {
+  const [amountSheet, setAmountSheet] = useState(false);
+  const measurable = isMeasurable(goal);
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  const linked = goal.linkedMonthlyId ? goals.find((g) => g.id === goal.linkedMonthlyId) : null;
+
+  const periodText = goal.type === "monthly"
+    ? (() => { const [jy, jm] = goal.monthKey.split("-").map(Number); return `${PERSIAN_MONTHS[jm - 1]} ${toFa(jy)}`; })()
+    : (() => { const [jy, jm, jd] = goal.weekKey.split("-").map(Number); const end = addDaysJalali(jy, jm, jd, 6); return `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]} تا ${toFa(end.jd)} ${PERSIAN_MONTHS[end.jm - 1]}`; })();
+
+  const logEntries = Object.keys(goal.progressLog || {}).sort().reverse();
+
+  return (
+    <>
+      <DetailField label="دسته‌بندی"><CategoryChip id={goal.category} /></DetailField>
+      <DetailField label="نوع">{goal.type === "monthly" ? "هدف ماهانه" : "هدف هفتگی"}</DetailField>
+      <DetailField label="بازه">{periodText}</DetailField>
+      {linked && <DetailField label="مرتبط با">{linked.title}</DetailField>}
+      {goal.rolloverCount > 0 && <DetailField label="انتقال">{toFa(goal.rolloverCount)} بار از بازهٔ قبل منتقل شده</DetailField>}
+      {goal.description && <DetailField label="توضیحات"><span className="detail-desc">{goal.description}</span></DetailField>}
+
+      {measurable ? (
+        <div className="detail-progress">
+          <div className="detail-progress-head">
+            <span>پیشرفت</span>
+            <b>{goalProgressText(goal)}</b>
+          </div>
+          <ProgressBar value={goalProgressPct(goal)} color={goal.completed ? "var(--c-success)" : "var(--c-primary)"} />
+          {goal.completed && <p className="detail-done-note"><Check size={13} /> به هدف رسیدی</p>}
+          <button className="primary-btn" onClick={() => setAmountSheet(true)}>
+            <Plus size={15} /> ثبت پیشرفت امروز
+          </button>
+
+          {logEntries.length > 0 && (
+            <>
+              <span className="detail-label detail-log-title">ثبت‌های روزانه</span>
+              <ul className="log-list">
+                {logEntries.map((dk) => {
+                  const [jy, jm, jd] = dk.split("-").map(Number);
+                  return (
+                    <li key={dk} className="log-row">
+                      <span>{toFa(jd)} {PERSIAN_MONTHS[jm - 1]}{dk === todayKey ? " (امروز)" : ""}</span>
+                      <span className="log-val">{formatAmount(goal.targetType, goal.progressLog[dk], goal.unit)}</span>
+                      <IconBtn onClick={() => onClearLogEntry(goal.id, dk)} label="حذف این ثبت"><Trash2 size={13} /></IconBtn>
+                    </li>
+                  );
+                })}
+              </ul>
+            </>
+          )}
+        </div>
+      ) : (
+        <button className={"toggle-big-btn" + (goal.completed ? " toggle-big-done" : "")} onClick={() => onToggle(goal.id)}>
+          {goal.completed ? <><Check size={15} /> انجام شده — برگرداندن</> : "علامت‌گذاری به‌عنوان انجام‌شده"}
+        </button>
+      )}
+
+      <DetailActions onEdit={onEdit} onDelete={onDelete} />
+
+      {goal.targetType === "time" && (
+        <DurationSheet
+          open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت زمان انجام‌شده"
+          currentMinutes={goalProgress(goal)}
+          onAdd={(mins) => onLogProgress(goal.id, todayKey, mins)}
+        />
+      )}
+      {goal.targetType === "count" && (
+        <CountSheet
+          open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت مقدار انجام‌شده"
+          unit={goal.unit} currentValue={goalProgress(goal)}
+          onAdd={(v) => onLogProgress(goal.id, todayKey, v)}
+        />
+      )}
+    </>
+  );
+}
+
+function TaskDetail({ task, goals, onEdit, onDelete, onToggle }) {
+  const [jy, jm, jd] = task.dateKey.split("-").map(Number);
+  const linked = task.linkedGoalId ? goals.find((g) => g.id === task.linkedGoalId) : null;
+  return (
+    <>
+      <DetailField label="دسته‌بندی"><CategoryChip id={task.category} /></DetailField>
+      <DetailField label="تاریخ">{PERSIAN_WEEKDAYS[persianWeekdayIndex(jy, jm, jd)]}، {toFa(jd)} {PERSIAN_MONTHS[jm - 1]} {toFa(jy)}</DetailField>
+      {task.reminderTime && <DetailField label="یادآوری">ساعت {toFa(task.reminderTime)}</DetailField>}
+      {linked && <DetailField label="مرتبط با هدف">{linked.title}</DetailField>}
+      {task.rolloverCount > 0 && <DetailField label="انتقال">{toFa(task.rolloverCount)} بار از روزهای قبل منتقل شده</DetailField>}
+      {task.description && <DetailField label="توضیحات"><span className="detail-desc">{task.description}</span></DetailField>}
+      <button className={"toggle-big-btn" + (task.completed ? " toggle-big-done" : "")} onClick={() => onToggle(task.id)}>
+        {task.completed ? <><Check size={15} /> انجام شده — برگرداندن</> : "علامت‌گذاری به‌عنوان انجام‌شده"}
+      </button>
+      <DetailActions onEdit={onEdit} onDelete={onDelete} />
+    </>
+  );
+}
+
+function HabitDetail({ habit, today, onEdit, onDelete, onToggle }) {
+  const tKey = dateKey(today.jy, today.jm, today.jd);
+  const done = !!habit.completions[tKey];
+  const streak = habitStreak(habit, today);
+  const total = Object.keys(habit.completions).length;
+  const last30 = useMemo(() => {
+    const start = addDaysJalali(today.jy, today.jm, today.jd, -29);
+    return Array.from({ length: 30 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
+  }, [tKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const categories = useContext(CategoriesContext);
+  const palette = COLOR_PALETTE[categoryOf(categories, habit.category).colorKey] || COLOR_PALETTE.slate;
+
+  return (
+    <>
+      <DetailField label="دسته‌بندی"><CategoryChip id={habit.category} /></DetailField>
+      <DetailField label="روزهای پیاپی">{toFa(streak)} روز</DetailField>
+      <DetailField label="مجموع روزهای انجام‌شده">{toFa(total)} روز</DetailField>
+      {habit.description && <DetailField label="توضیحات"><span className="detail-desc">{habit.description}</span></DetailField>}
+      <span className="detail-label detail-log-title">۳۰ روز اخیر</span>
+      <div className="heatmap">
+        {last30.map((d) => {
+          const dk = dateKey(d.jy, d.jm, d.jd);
+          const filled = !!habit.completions[dk];
+          return <span key={dk} className="heat-cell" title={`${toFa(d.jd)} ${PERSIAN_MONTHS[d.jm - 1]}`} style={{ background: filled ? palette.hex : "var(--c-border-soft)" }} />;
+        })}
+      </div>
+      <button className={"toggle-big-btn" + (done ? " toggle-big-done" : "")} onClick={() => onToggle(habit.id, tKey)}>
+        {done ? <><Check size={15} /> امروز انجام شده — برگرداندن</> : "ثبت انجام برای امروز"}
+      </button>
+      <DetailActions onEdit={onEdit} onDelete={onDelete} />
+    </>
+  );
+}
+
+function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLog }) {
+  const [sheet, setSheet] = useState(false);
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  const current = trackerLogs[`${item.id}:${todayKey}`] || (item.type === "boolean" ? false : 0);
+  const last14 = useMemo(() => {
+    const start = addDaysJalali(today.jy, today.jm, today.jd, -13);
+    return Array.from({ length: 14 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
+  }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const typeLabel = (TRACKER_TYPES.find((t) => t.id === item.type) || {}).label;
+
+  return (
+    <>
+      <DetailField label="نوع ثبت">{typeLabel}</DetailField>
+      {item.unit && <DetailField label="واحد">{item.unit}</DetailField>}
+      {item.description && <DetailField label="توضیحات"><span className="detail-desc">{item.description}</span></DetailField>}
+
+      <div className="detail-progress">
+        <div className="detail-progress-head">
+          <span>مقدار امروز</span>
+          <b>{item.type === "boolean" ? (current ? "انجام شده" : "انجام نشده") : formatAmount(item.type, current, item.unit)}</b>
+        </div>
+        {item.type === "boolean" ? (
+          <button className={"toggle-big-btn" + (current ? " toggle-big-done" : "")} onClick={() => onSetLog(item.id, todayKey, !current)}>
+            {current ? <><Check size={15} /> برگرداندن</> : "ثبت انجام برای امروز"}
+          </button>
+        ) : (
+          <button className="primary-btn" onClick={() => setSheet(true)}><Plus size={15} /> ثبت مقدار</button>
+        )}
+      </div>
+
+      <span className="detail-label detail-log-title">۱۴ روز اخیر</span>
+      <ul className="log-list">
+        {last14.slice().reverse().map((d) => {
+          const dk = dateKey(d.jy, d.jm, d.jd);
+          const v = trackerLogs[`${item.id}:${dk}`];
+          if (v === undefined || v === false || v === 0) return null;
+          return (
+            <li key={dk} className="log-row">
+              <span>{toFa(d.jd)} {PERSIAN_MONTHS[d.jm - 1]}{dk === todayKey ? " (امروز)" : ""}</span>
+              <span className="log-val">{item.type === "boolean" ? "✓" : formatAmount(item.type, v, item.unit)}</span>
+            </li>
+          );
+        })}
+      </ul>
+
+      <DetailActions onEdit={onEdit} onDelete={onDelete} />
+
+      {item.type === "time" && (
+        <DurationSheet open={sheet} onClose={() => setSheet(false)} title="ثبت زمان"
+          currentMinutes={current}
+          onAdd={(mins) => onSetLog(item.id, todayKey, current + mins)}
+          onSet={(mins) => onSetLog(item.id, todayKey, mins)} />
+      )}
+      {item.type === "count" && (
+        <CountSheet open={sheet} onClose={() => setSheet(false)} title="ثبت مقدار" unit={item.unit}
+          currentValue={current}
+          onAdd={(v) => onSetLog(item.id, todayKey, current + v)}
+          onSet={(v) => onSetLog(item.id, todayKey, v)} />
+      )}
+    </>
+  );
+}
+/* =========================================================================
+   FORMS — each accepts `initial` so the same form handles create and edit.
+   ========================================================================= */
+
+function GoalForm({ initial, monthlyGoals, onSave }) {
+  const categories = useContext(CategoriesContext);
+  const [title, setTitle] = useState(initial?.title || "");
+  const [description, setDescription] = useState(initial?.description || "");
+  const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
+  const [linkedMonthlyId, setLinkedMonthlyId] = useState(initial?.linkedMonthlyId || "");
+  const [targetType, setTargetType] = useState(initial?.targetType || "simple");
+  const [unit, setUnit] = useState(initial?.unit || "");
+  const [countTarget, setCountTarget] = useState(initial?.targetType === "count" ? initial.targetValue : 10);
+  const initMins = initial?.targetType === "time" ? initial.targetValue : 0;
+  const [tHours, setTHours] = useState(Math.floor(initMins / 60));
+  const [tMinutes, setTMinutes] = useState(initMins % 60);
+
+  const timeTarget = tHours * 60 + tMinutes;
+  const targetValue = targetType === "count" ? countTarget : targetType === "time" ? timeTarget : null;
+  const valid = title.trim() && (targetType === "simple" || (targetValue && targetValue > 0));
+
+  return (
+    <div className="form">
+      <label className="field-label">عنوان هدف</label>
+      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: تمام کردن فصل سوم کتاب" autoFocus />
+
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این هدف" />
+
+      <label className="field-label">دسته‌بندی</label>
+      <CategoryPicker value={category} onChange={setCategory} />
+
+      <label className="field-label">نحوهٔ سنجش</label>
+      <div className="segmented">
+        <button className={targetType === "simple" ? "seg-active" : ""} onClick={() => setTargetType("simple")}>ساده</button>
+        <button className={targetType === "count" ? "seg-active" : ""} onClick={() => setTargetType("count")}>تعدادی</button>
+        <button className={targetType === "time" ? "seg-active" : ""} onClick={() => setTargetType("time")}>زمانی</button>
+      </div>
+
+      {targetType === "count" && (
+        <>
+          <label className="field-label">مقدار هدف</label>
+          <div className="big-stepper">
+            <button onClick={() => setCountTarget((v) => Math.max(1, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
+            <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={countTarget} onChange={(e) => setCountTarget(Math.max(1, Number(e.target.value) || 1))} />
+            <button onClick={() => setCountTarget((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
+          </div>
+          <label className="field-label">واحد (اختیاری)</label>
+          <input className="text-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً: صفحه، جلسه، بار" />
+        </>
+      )}
+
+      {targetType === "time" && (
+        <>
+          <label className="field-label">زمان هدف</label>
+          <DurationPicker hours={tHours} minutes={tMinutes} setHours={setTHours} setMinutes={setTMinutes} />
+        </>
+      )}
+
+      {monthlyGoals && monthlyGoals.length > 0 && (
+        <>
+          <label className="field-label">مرتبط با هدف ماهانه (اختیاری)</label>
+          <select className="text-input" value={linkedMonthlyId} onChange={(e) => setLinkedMonthlyId(e.target.value)}>
+            <option value="">بدون ارتباط</option>
+            {monthlyGoals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+          </select>
+        </>
+      )}
+
+      <button className="primary-btn" disabled={!valid}
+        onClick={() => valid && onSave({
+          title: title.trim(), description: description.trim() || null, category,
+          linkedMonthlyId: linkedMonthlyId || null,
+          targetType, targetValue, unit: targetType === "count" ? (unit.trim() || null) : null,
+        })}>
+        ذخیره
+      </button>
+    </div>
+  );
+}
+
+function TaskForm({ initial, goals, onSave }) {
+  const categories = useContext(CategoriesContext);
+  const [title, setTitle] = useState(initial?.title || "");
+  const [description, setDescription] = useState(initial?.description || "");
+  const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
+  const [linkedGoalId, setLinkedGoalId] = useState(initial?.linkedGoalId || "");
+  const [reminderTime, setReminderTime] = useState(initial?.reminderTime || "");
+  return (
+    <div className="form">
+      <label className="field-label">عنوان کار</label>
+      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: تماس با مشتری" autoFocus />
+
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این کار" />
+
+      <label className="field-label">دسته‌بندی</label>
+      <CategoryPicker value={category} onChange={setCategory} />
+
+      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> ساعت یادآوری (اختیاری)</label>
+      <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
+
+      {goals.length > 0 && (
+        <>
+          <label className="field-label">مرتبط با هدف (اختیاری)</label>
+          <select className="text-input" value={linkedGoalId} onChange={(e) => setLinkedGoalId(e.target.value)}>
+            <option value="">بدون ارتباط</option>
+            {goals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+          </select>
+        </>
+      )}
+
+      <button className="primary-btn" disabled={!title.trim()}
+        onClick={() => title.trim() && onSave({
+          title: title.trim(), description: description.trim() || null, category,
+          linkedGoalId: linkedGoalId || null, reminderTime: reminderTime || null,
+        })}>
+        ذخیره
+      </button>
+    </div>
+  );
+}
+
+function HabitForm({ initial, onSave }) {
+  const categories = useContext(CategoriesContext);
+  const [title, setTitle] = useState(initial?.title || "");
+  const [description, setDescription] = useState(initial?.description || "");
+  const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
+  return (
+    <div className="form">
+      <label className="field-label">عنوان عادت</label>
+      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: پیاده‌روی روزانه" autoFocus />
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این عادت" />
+      <label className="field-label">دسته‌بندی</label>
+      <CategoryPicker value={category} onChange={setCategory} />
+      <button className="primary-btn" disabled={!title.trim()}
+        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null, category })}>
+        ذخیره
+      </button>
+    </div>
+  );
+}
+
+function TrackerItemForm({ initial, onSave }) {
+  const [title, setTitle] = useState(initial?.title || "");
+  const [type, setType] = useState(initial?.type || "boolean");
+  const [unit, setUnit] = useState(initial?.unit || "");
+  const [description, setDescription] = useState(initial?.description || "");
+  return (
+    <div className="form">
+      <label className="field-label">عنوان</label>
+      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: نوشیدن آب" autoFocus />
+      <label className="field-label">نوع ثبت</label>
+      <div className="segmented">
+        {TRACKER_TYPES.map((t) => <button key={t.id} className={type === t.id ? "seg-active" : ""} onClick={() => setType(t.id)}>{t.label}</button>)}
+      </div>
+      {type === "count" && (
+        <>
+          <label className="field-label">واحد (اختیاری)</label>
+          <input className="text-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً: لیوان، صفحه، بار" />
+        </>
+      )}
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="توضیح کوتاهی دربارهٔ این مورد" />
+      <button className="primary-btn" disabled={!title.trim()}
+        onClick={() => title.trim() && onSave({ title: title.trim(), type, unit: type === "count" ? (unit.trim() || null) : null, description: description.trim() || null })}>
+        ذخیره
+      </button>
+    </div>
+  );
+}
+
+function GroupForm({ initial, onSave }) {
+  const [title, setTitle] = useState(initial?.title || "");
+  const [description, setDescription] = useState(initial?.description || "");
+  return (
+    <div className="form">
+      <label className="field-label">عنوان گروه</label>
+      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: سلامت روزانه" autoFocus />
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="این گروه برای چیست؟" />
+      <button className="primary-btn" disabled={!title.trim()}
+        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null })}>
+        ذخیره
+      </button>
+    </div>
+  );
+}
+
+/* =========================================================================
    DASHBOARD TAB
    ========================================================================= */
 
-function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, setTab }) {
+function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, setTab, openDetail, overdueTasks, overdueGoals, rolloverTasks, rolloverGoals }) {
   const tKey = dateKey(today.jy, today.jm, today.jd);
   const todaysTasks = tasks.filter((t) => t.dateKey === tKey);
   const doneTasks = todaysTasks.filter((t) => t.completed).length;
@@ -646,6 +1196,9 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
 
   return (
     <div className="tab-pane">
+      <RolloverBanner count={overdueTasks.length} label="کار انجام‌نشده از روزهای گذشته" onRollover={rolloverTasks} />
+      <RolloverBanner count={overdueGoals.length} label="هدف ناتمام از بازه‌های گذشته" onRollover={rolloverGoals} />
+
       <div className="stat-row">
         <div className="stat-card"><span className="stat-num">{toFa(doneTasks)}/{toFa(todaysTasks.length)}</span><span className="stat-label">وظیفه امروز</span></div>
         <div className="stat-card"><span className="stat-num">{toFa(doneHabits)}/{toFa(habits.length)}</span><span className="stat-label">عادت امروز</span></div>
@@ -658,7 +1211,7 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
           <EmptyState text="امروز کاری ثبت نشده" sub="از تب وظایف یکی اضافه کن" />
         ) : (
           <ul className="list">
-            {todaysTasks.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} />)}
+            {todaysTasks.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}
           </ul>
         )}
       </section>
@@ -673,10 +1226,12 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
               const done = !!h.completions[tKey];
               return (
                 <li key={h.id} className="list-row">
-                  <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => toggleHabit(h.id, tKey)}>
+                  <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => toggleHabit(h.id, tKey)} aria-label="تغییر وضعیت">
                     {done && <Check size={13} strokeWidth={3} />}
                   </button>
-                  <span className={"list-text" + (done ? " list-text-done" : "")}>{h.title}</span>
+                  <button className="row-body" onClick={() => openDetail({ kind: "habit", id: h.id })}>
+                    <span className={"list-text" + (done ? " list-text-done" : "")}>{h.title}</span>
+                  </button>
                   <CategoryChip id={h.category} />
                 </li>
               );
@@ -710,36 +1265,9 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
    GOALS TAB
    ========================================================================= */
 
-function GoalForm({ initial, monthlyGoals, onSave }) {
-  const categories = useContext(CategoriesContext);
-  const [title, setTitle] = useState(initial?.title || "");
-  const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
-  const [linkedMonthlyId, setLinkedMonthlyId] = useState(initial?.linkedMonthlyId || "");
-  return (
-    <div className="form">
-      <label className="field-label">عنوان هدف</label>
-      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: تمام کردن فصل سوم کتاب" autoFocus />
-      <label className="field-label">دسته‌بندی</label>
-      <CategoryPicker value={category} onChange={setCategory} />
-      {monthlyGoals && monthlyGoals.length > 0 && (
-        <>
-          <label className="field-label">مرتبط با هدف ماهانه (اختیاری)</label>
-          <select className="text-input" value={linkedMonthlyId} onChange={(e) => setLinkedMonthlyId(e.target.value)}>
-            <option value="">بدون ارتباط</option>
-            {monthlyGoals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
-          </select>
-        </>
-      )}
-      <button className="primary-btn" disabled={!title.trim()} onClick={() => title.trim() && onSave({ title: title.trim(), category, linkedMonthlyId: linkedMonthlyId || null })}>
-        ذخیره
-      </button>
-    </div>
-  );
-}
-
-function GoalsTab({ goals, addGoal, toggleGoal, deleteGoal }) {
+function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals, rolloverGoals }) {
   const [mode, setMode] = useState("monthly");
-  const [cursor, setCursor] = useState(todayJalali());
+  const [cursor, setCursor] = useState(today);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const weekStart = getWeekStart(cursor.jy, cursor.jm, cursor.jd);
@@ -747,9 +1275,9 @@ function GoalsTab({ goals, addGoal, toggleGoal, deleteGoal }) {
   const weekEnd = addDaysJalali(weekStart.jy, weekStart.jm, weekStart.jd, 6);
   const mKey = monthKey(cursor.jy, cursor.jm);
 
-  const monthGoalsAll = goals.filter((g) => g.type === "monthly" && g.monthKey === mKey);
-  const weekGoalsAll = goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
-  const shown = mode === "monthly" ? monthGoalsAll : weekGoalsAll;
+  const shown = mode === "monthly"
+    ? goals.filter((g) => g.type === "monthly" && g.monthKey === mKey)
+    : goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
   const allMonthlyGoals = goals.filter((g) => g.type === "monthly");
 
   function goPrev() {
@@ -762,17 +1290,19 @@ function GoalsTab({ goals, addGoal, toggleGoal, deleteGoal }) {
   }
   function handleSave(data) {
     addGoal({
-      id: uid(), title: data.title, category: data.category, type: mode,
+      id: uid(), ...data, type: mode,
       monthKey: mode === "monthly" ? mKey : null,
       weekKey: mode === "weekly" ? wKey : null,
       linkedMonthlyId: mode === "weekly" ? data.linkedMonthlyId : null,
-      completed: false,
+      completed: false, progressLog: {}, rolloverCount: 0,
     });
     setSheetOpen(false);
   }
 
   return (
     <div className="tab-pane">
+      <RolloverBanner count={overdueGoals.length} label="هدف ناتمام از بازه‌های گذشته" onRollover={rolloverGoals} />
+
       <div className="segmented">
         <button className={mode === "monthly" ? "seg-active" : ""} onClick={() => setMode("monthly")}>ماهانه</button>
         <button className={mode === "weekly" ? "seg-active" : ""} onClick={() => setMode("weekly")}>هفتگی</button>
@@ -791,7 +1321,7 @@ function GoalsTab({ goals, addGoal, toggleGoal, deleteGoal }) {
       ) : (
         <ul className="list">
           {shown.map((g) => (
-            <GoalRow key={g.id} goal={g} linkedTitle={g.linkedMonthlyId ? goals.find((m) => m.id === g.linkedMonthlyId)?.title : null} onToggle={toggleGoal} onDelete={deleteGoal} />
+            <GoalRow key={g.id} goal={g} linkedTitle={g.linkedMonthlyId ? goals.find((m) => m.id === g.linkedMonthlyId)?.title : null} onToggle={toggleGoal} onOpen={openDetail} />
           ))}
         </ul>
       )}
@@ -808,40 +1338,7 @@ function GoalsTab({ goals, addGoal, toggleGoal, deleteGoal }) {
    TASKS TAB
    ========================================================================= */
 
-function TaskForm({ goals, onSave }) {
-  const categories = useContext(CategoriesContext);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState(categories[0]?.id || "");
-  const [linkedGoalId, setLinkedGoalId] = useState("");
-  const [reminderTime, setReminderTime] = useState("");
-  return (
-    <div className="form">
-      <label className="field-label">عنوان کار</label>
-      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: تماس با مشتری" autoFocus />
-      <label className="field-label">دسته‌بندی</label>
-      <CategoryPicker value={category} onChange={setCategory} />
-      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> زمان یادآوری (اختیاری)</label>
-      <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
-      {goals.length > 0 && (
-        <>
-          <label className="field-label">مرتبط با هدف (اختیاری)</label>
-          <select className="text-input" value={linkedGoalId} onChange={(e) => setLinkedGoalId(e.target.value)}>
-            <option value="">بدون ارتباط</option>
-            {goals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
-          </select>
-        </>
-      )}
-      <button
-        className="primary-btn" disabled={!title.trim()}
-        onClick={() => title.trim() && onSave({ title: title.trim(), category, linkedGoalId: linkedGoalId || null, reminderTime: reminderTime || null })}
-      >
-        ذخیره
-      </button>
-    </div>
-  );
-}
-
-function TasksTab({ today, tasks, goals, addTask, toggleTask, deleteTask }) {
+function TasksTab({ today, tasks, goals, addTask, toggleTask, openDetail, overdueTasks, rolloverTasks }) {
   const [cursor, setCursor] = useState(today);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -855,6 +1352,8 @@ function TasksTab({ today, tasks, goals, addTask, toggleTask, deleteTask }) {
 
   return (
     <div className="tab-pane">
+      <RolloverBanner count={overdueTasks.length} label="کار انجام‌نشده از روزهای گذشته" onRollover={rolloverTasks} />
+
       <div className="period-nav">
         <IconBtn onClick={() => setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, -1))} label="روز قبل"><ChevronRight size={18} /></IconBtn>
         <span className="period-label">{PERSIAN_WEEKDAYS[persianWeekdayIndex(cursor.jy, cursor.jm, cursor.jd)]}، {toFa(cursor.jd)} {PERSIAN_MONTHS[cursor.jm - 1]}</span>
@@ -880,13 +1379,16 @@ function TasksTab({ today, tasks, goals, addTask, toggleTask, deleteTask }) {
         <EmptyState text="کاری برای این روز ثبت نشده" sub="با دکمهٔ زیر یکی اضافه کن" />
       ) : (
         <ul className="list">
-          {dayTasks.map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onDelete={deleteTask} />)}
+          {dayTasks.map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}
         </ul>
       )}
 
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن کار"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="کار جدید">
-        <TaskForm goals={goals} onSave={(data) => { addTask({ id: uid(), title: data.title, category: data.category, dateKey: cKey, completed: false, linkedGoalId: data.linkedGoalId, reminderTime: data.reminderTime, reminderFired: false }); setSheetOpen(false); }} />
+        <TaskForm goals={goals} onSave={(data) => {
+          addTask({ id: uid(), ...data, dateKey: cKey, completed: false, reminderFired: false, rolloverCount: 0 });
+          setSheetOpen(false);
+        }} />
       </Sheet>
     </div>
   );
@@ -896,22 +1398,7 @@ function TasksTab({ today, tasks, goals, addTask, toggleTask, deleteTask }) {
    HABITS TAB
    ========================================================================= */
 
-function HabitForm({ onSave }) {
-  const categories = useContext(CategoriesContext);
-  const [title, setTitle] = useState("");
-  const [category, setCategory] = useState(categories[0]?.id || "");
-  return (
-    <div className="form">
-      <label className="field-label">عنوان عادت</label>
-      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: پیاده‌روی روزانه" autoFocus />
-      <label className="field-label">دسته‌بندی</label>
-      <CategoryPicker value={category} onChange={setCategory} />
-      <button className="primary-btn" disabled={!title.trim()} onClick={() => title.trim() && onSave({ title: title.trim(), category })}>ذخیره</button>
-    </div>
-  );
-}
-
-function HabitsTab({ today, habits, addHabit, toggleHabit, deleteHabit }) {
+function HabitsTab({ today, habits, addHabit, toggleHabit, openDetail }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   return (
     <div className="tab-pane">
@@ -919,85 +1406,48 @@ function HabitsTab({ today, habits, addHabit, toggleHabit, deleteHabit }) {
         <EmptyState text="هنوز عادتی ثبت نشده" sub="یک عادت روزانه برای ردیابی اضافه کن" />
       ) : (
         <ul className="list">
-          {habits.map((h) => <HabitRow key={h.id} habit={h} today={today} onToggle={toggleHabit} onDelete={deleteHabit} />)}
+          {habits.map((h) => <HabitRow key={h.id} habit={h} today={today} onToggle={toggleHabit} onOpen={openDetail} />)}
         </ul>
       )}
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن عادت"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="عادت جدید">
-        <HabitForm onSave={(data) => { addHabit({ id: uid(), title: data.title, category: data.category, completions: {} }); setSheetOpen(false); }} />
+        <HabitForm onSave={(data) => { addHabit({ id: uid(), ...data, completions: {} }); setSheetOpen(false); }} />
       </Sheet>
     </div>
   );
 }
 
 /* =========================================================================
-   TRACKER TAB — free-form groups of trackable items (yes/no, count, or
-   time-based), each with an optional description and a per-group summary.
+   TRACKER TAB
    ========================================================================= */
 
-function TrackerItemForm({ onSave }) {
-  const [title, setTitle] = useState("");
-  const [type, setType] = useState("boolean");
-  const [unit, setUnit] = useState("");
-  const [description, setDescription] = useState("");
-  return (
-    <div className="form">
-      <label className="field-label">عنوان</label>
-      <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: نوشیدن آب" autoFocus />
-      <label className="field-label">نوع ثبت</label>
-      <div className="segmented">
-        {TRACKER_TYPES.map((t) => <button key={t.id} className={type === t.id ? "seg-active" : ""} onClick={() => setType(t.id)}>{t.label}</button>)}
-      </div>
-      {type === "count" && (
-        <>
-          <label className="field-label">واحد (اختیاری)</label>
-          <input className="text-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً: لیوان، صفحه، بار" />
-        </>
-      )}
-      <label className="field-label">توضیحات (اختیاری)</label>
-      <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="توضیح کوتاهی دربارهٔ این مورد" />
-      <button
-        className="primary-btn" disabled={!title.trim()}
-        onClick={() => title.trim() && onSave({ title: title.trim(), type, unit: unit.trim() || null, description: description.trim() || null })}
-      >
-        ذخیره
-      </button>
-    </div>
-  );
-}
-
-const TrackerItemRow = memo(function TrackerItemRow({ item, value, onChange, onDelete }) {
+const TrackerItemRow = memo(function TrackerItemRow({ item, value, onToggleBool, onQuickAdd, onOpen, onOpenAmount }) {
   return (
     <li className="tracker-row">
-      <div className="tracker-row-main">
+      <button className="row-body" onClick={() => onOpen({ kind: "tracker", id: item.id })}>
         <span className="list-text">{item.title}</span>
-        {item.description && <span className="tracker-desc">{item.description}</span>}
-      </div>
+        {item.description && <span className="row-desc">{item.description}</span>}
+      </button>
       {item.type === "boolean" && (
-        <button className={"check-circle" + (value ? " check-circle-done" : "")} onClick={() => onChange(!value)}>
+        <button className={"check-circle" + (value ? " check-circle-done" : "")} onClick={() => onToggleBool(!value)} aria-label="تغییر وضعیت">
           {value && <Check size={13} strokeWidth={3} />}
         </button>
       )}
       {item.type === "count" && (
         <div className="stepper">
-          <button onClick={() => onChange(Math.max(0, value - 1))} aria-label="کم کردن"><Minus size={13} /></button>
-          <span>{toFa(value)}{item.unit ? ` ${item.unit}` : ""}</span>
-          <button onClick={() => onChange(value + 1)} aria-label="زیاد کردن"><Plus size={13} /></button>
+          <button onClick={() => onQuickAdd(-1)} aria-label="کم کردن"><Minus size={13} /></button>
+          <button className="stepper-val" onClick={onOpenAmount}>{toFa(value)}{item.unit ? ` ${item.unit}` : ""}</button>
+          <button onClick={() => onQuickAdd(1)} aria-label="زیاد کردن"><Plus size={13} /></button>
         </div>
       )}
       {item.type === "time" && (
-        <div className="stepper">
-          <button onClick={() => onChange(Math.max(0, value - 5))} aria-label="کم کردن"><Minus size={13} /></button>
-          <span>{formatMinutes(value)}</span>
-          <button onClick={() => onChange(value + 5)} aria-label="زیاد کردن"><Plus size={13} /></button>
-        </div>
+        <button className="time-chip" onClick={onOpenAmount}><Clock size={12} />{formatMinutes(value)}</button>
       )}
-      <IconBtn onClick={onDelete} label="حذف"><Trash2 size={14} /></IconBtn>
     </li>
   );
 });
 
-function TrackerGroupCard({ group, items, trackerLogs, today, onLogChange, onDeleteItem, onDeleteGroup, onAddItem }) {
+function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDetail, onAddItem, onEditGroup, onDeleteGroup, onOpenAmount }) {
   const todayKey = dateKey(today.jy, today.jm, today.jd);
   const last7 = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -6);
@@ -1007,7 +1457,11 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onLogChange, onDel
   return (
     <div className="group-card">
       <div className="group-card-head">
-        <h4>{group.title}</h4>
+        <div className="group-card-titles">
+          <h4>{group.title}</h4>
+          {group.description && <span className="row-desc">{group.description}</span>}
+        </div>
+        <IconBtn onClick={() => onEditGroup(group)} label="ویرایش گروه"><Pencil size={14} /></IconBtn>
         <IconBtn onClick={() => onDeleteGroup(group.id)} label="حذف گروه"><Trash2 size={15} /></IconBtn>
       </div>
 
@@ -1019,7 +1473,15 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onLogChange, onDel
             {items.map((item) => {
               const raw = trackerLogs[`${item.id}:${todayKey}`];
               const value = raw === undefined ? (item.type === "boolean" ? false : 0) : raw;
-              return <TrackerItemRow key={item.id} item={item} value={value} onChange={(v) => onLogChange(item.id, todayKey, v)} onDelete={() => onDeleteItem(item.id)} />;
+              return (
+                <TrackerItemRow
+                  key={item.id} item={item} value={value}
+                  onToggleBool={(v) => onSetLog(item.id, todayKey, v)}
+                  onQuickAdd={(d) => onSetLog(item.id, todayKey, Math.max(0, value + d))}
+                  onOpen={onOpenDetail}
+                  onOpenAmount={() => onOpenAmount(item, value)}
+                />
+              );
             })}
           </ul>
 
@@ -1047,10 +1509,12 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onLogChange, onDel
   );
 }
 
-function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup, deleteGroup, addItem, deleteItem, setLog }) {
+function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup, editGroup, deleteGroup, addItem, setLog, openDetail }) {
   const [groupSheetOpen, setGroupSheetOpen] = useState(false);
+  const [editingGroup, setEditingGroup] = useState(null);
   const [itemSheetGroupId, setItemSheetGroupId] = useState(null);
-  const [groupTitle, setGroupTitle] = useState("");
+  const [amountTarget, setAmountTarget] = useState(null);
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
 
   return (
     <div className="tab-pane">
@@ -1061,8 +1525,9 @@ function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup,
           <TrackerGroupCard
             key={g.id} group={g} items={trackerItems.filter((it) => it.groupId === g.id)}
             trackerLogs={trackerLogs} today={today}
-            onLogChange={setLog} onDeleteItem={deleteItem} onDeleteGroup={deleteGroup}
-            onAddItem={setItemSheetGroupId}
+            onSetLog={setLog} onOpenDetail={openDetail} onAddItem={setItemSheetGroupId}
+            onEditGroup={setEditingGroup} onDeleteGroup={deleteGroup}
+            onOpenAmount={(item, value) => setAmountTarget({ item, value })}
           />
         ))
       )}
@@ -1070,20 +1535,36 @@ function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup,
       <button className="fab" onClick={() => setGroupSheetOpen(true)} aria-label="افزودن گروه"><Plus size={22} /></button>
 
       <Sheet open={groupSheetOpen} onClose={() => setGroupSheetOpen(false)} title="گروه جدید">
-        <div className="form">
-          <label className="field-label">عنوان گروه</label>
-          <input className="text-input" value={groupTitle} onChange={(e) => setGroupTitle(e.target.value)} placeholder="مثلاً: سلامت روزانه" autoFocus />
-          <button className="primary-btn" disabled={!groupTitle.trim()} onClick={() => { if (groupTitle.trim()) { addGroup({ id: uid(), title: groupTitle.trim() }); setGroupTitle(""); setGroupSheetOpen(false); } }}>ذخیره</button>
-        </div>
+        <GroupForm onSave={(data) => { addGroup({ id: uid(), ...data }); setGroupSheetOpen(false); }} />
+      </Sheet>
+
+      <Sheet open={!!editingGroup} onClose={() => setEditingGroup(null)} title="ویرایش گروه">
+        {editingGroup && <GroupForm initial={editingGroup} onSave={(data) => { editGroup(editingGroup.id, data); setEditingGroup(null); }} />}
       </Sheet>
 
       <Sheet open={!!itemSheetGroupId} onClose={() => setItemSheetGroupId(null)} title="مورد جدید">
         <TrackerItemForm onSave={(data) => { addItem({ id: uid(), groupId: itemSheetGroupId, ...data }); setItemSheetGroupId(null); }} />
       </Sheet>
+
+      {amountTarget && amountTarget.item.type === "time" && (
+        <DurationSheet
+          open={true} onClose={() => setAmountTarget(null)} title={`ثبت زمان — ${amountTarget.item.title}`}
+          currentMinutes={amountTarget.value}
+          onAdd={(mins) => setLog(amountTarget.item.id, todayKey, amountTarget.value + mins)}
+          onSet={(mins) => setLog(amountTarget.item.id, todayKey, mins)}
+        />
+      )}
+      {amountTarget && amountTarget.item.type === "count" && (
+        <CountSheet
+          open={true} onClose={() => setAmountTarget(null)} title={`ثبت مقدار — ${amountTarget.item.title}`}
+          unit={amountTarget.item.unit} currentValue={amountTarget.value}
+          onAdd={(v) => setLog(amountTarget.item.id, todayKey, amountTarget.value + v)}
+          onSet={(v) => setLog(amountTarget.item.id, todayKey, v)}
+        />
+      )}
     </div>
   );
 }
-
 /* =========================================================================
    REVIEW TAB
    ========================================================================= */
@@ -1197,7 +1678,222 @@ function ReviewTab({ today, tasks, goals, notes, reviews, saveNote, addReview, d
     </div>
   );
 }
+/* =========================================================================
+   STYLES
+   ========================================================================= */
 
+const APP_CSS = `
+  .app-root, .app-root * { box-sizing: border-box; }
+  .app-root {
+    --c-bg: #F7F7F5; --c-surface: #FFFFFF; --c-ink: #1C1D21; --c-ink-soft: #6B6D76; --c-ink-faint: #ADAFB6;
+    --c-primary: #2A4374; --c-primary-soft: #E8ECF5;
+    --c-saffron: #C1862F; --c-saffron-soft: #F5EBDA;
+    --c-success: #3E7C6B; --c-success-soft: #E3F0EC;
+    --c-plum: #7A4B6B; --c-plum-soft: #F1E7EE;
+    --c-danger: #B5533C; --c-danger-soft: #F6E6E1;
+    --c-border: #E6E4DF; --c-border-soft: #F0EFEB;
+    --c-spring: #3E7C6B; --c-spring-soft: #DCEAE5;
+    --c-summer: #C1862F; --c-summer-soft: #F1E3C9;
+    --c-autumn: #A9673A; --c-autumn-soft: #EEDDCE;
+    --c-winter: #2A4374; --c-winter-soft: #DEE3EE;
+    font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+    background: var(--c-bg); color: var(--c-ink);
+    max-width: 460px; margin: 0 auto; min-height: 100vh; position: relative;
+    display: flex; flex-direction: column;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
+  .app-root button { font-family: inherit; cursor: pointer; }
+  .app-root :focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
+  .app-root input, .app-root select, .app-root textarea { font-family: inherit; }
+
+  .app-header { padding: 18px 18px 14px; background: var(--c-surface); border-bottom: 1px solid var(--c-border-soft); position: sticky; top: 0; z-index: 10; }
+  .app-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .app-wordmark { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
+  .header-right-group { display: flex; align-items: center; gap: 8px; }
+  .app-header-date { font-size: 12px; color: var(--c-ink-soft); font-weight: 500; }
+
+  .season-ring-wrap { display: flex; flex-direction: column; gap: 6px; }
+  .season-ring { display: flex; gap: 6px; }
+  .season-group { display: flex; gap: 2px; flex: 1; }
+  .season-seg { position: relative; flex: 1; height: 7px; border-radius: 4px; overflow: hidden; }
+  .season-seg-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-radius: 4px; transition: width .3s ease; }
+  .season-ring-label { font-size: 12px; color: var(--c-ink-soft); display: flex; align-items: center; gap: 6px; }
+  .season-ring-label .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--c-ink-faint); }
+
+  .tab-pane { padding: 16px 16px 90px; flex: 1; }
+
+  .rollover-banner { display: flex; align-items: center; gap: 8px; background: var(--c-saffron-soft); border: 1px solid #E3CFA8; color: #7A5416; border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
+  .rollover-banner span { flex: 1; }
+  .rollover-banner button { border: none; background: var(--c-saffron); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; }
+
+  .stat-row { display: flex; gap: 10px; margin-bottom: 20px; }
+  .stat-card { flex: 1; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .stat-num { font-size: 19px; font-weight: 800; color: var(--c-primary); }
+  .stat-label { font-size: 11px; color: var(--c-ink-soft); }
+
+  .section { margin-bottom: 22px; }
+  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .section-head h3 { font-size: 14px; font-weight: 700; margin: 0; }
+  .link-btn { background: none; border: none; color: var(--c-primary); font-size: 12px; font-weight: 600; padding: 0; }
+
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .list-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; }
+  .row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; background: none; border: none; padding: 0; text-align: start; font-family: inherit; color: inherit; }
+  .list-text { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .list-text-done { text-decoration: line-through; color: var(--c-ink-faint); }
+  .row-desc { font-size: 10.5px; color: var(--c-ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .goal-linked { font-size: 10.5px; color: var(--c-ink-faint); }
+  .row-progress { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .row-progress .progress-track { flex: 1; height: 5px; }
+  .row-progress-text { font-size: 10px; color: var(--c-ink-soft); font-weight: 700; white-space: nowrap; }
+
+  .check-circle { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: #fff; transition: all .15s ease; padding: 0; }
+  .check-circle-done { background: var(--c-success); border-color: var(--c-success); }
+
+  .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; }
+  .chip-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .rolled-badge { font-size: 10px; font-weight: 700; color: var(--c-saffron); background: var(--c-saffron-soft); border-radius: 999px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; }
+  .reminder-badge { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-soft); background: var(--c-border-soft); padding: 2px 6px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+
+  .empty-state { text-align: center; padding: 22px 10px; background: var(--c-surface); border: 1px dashed var(--c-border); border-radius: 14px; }
+  .empty-title { font-size: 13px; font-weight: 600; color: var(--c-ink-soft); margin: 0 0 3px; }
+  .empty-sub { font-size: 11.5px; color: var(--c-ink-faint); margin: 0; }
+
+  .add-inline-btn { margin-top: 10px; display: flex; align-items: center; gap: 5px; background: none; border: none; color: var(--c-primary); font-size: 12.5px; font-weight: 600; padding: 4px 0; }
+
+  .progress-track { width: 100%; height: 8px; border-radius: 5px; overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 5px; transition: width .3s ease; }
+  .goal-progress-row { margin-bottom: 10px; }
+  .goal-progress-label { font-size: 12px; color: var(--c-ink-soft); margin-bottom: 5px; font-weight: 500; }
+
+  .icon-btn { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); flex-shrink: 0; }
+  .icon-btn-solid { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+
+  .segmented { display: flex; background: var(--c-border-soft); border-radius: 11px; padding: 3px; margin-bottom: 14px; gap: 3px; }
+  .segmented button { flex: 1; border: none; background: none; padding: 8px 0; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); }
+  .seg-active { background: var(--c-surface) !important; color: var(--c-primary) !important; box-shadow: 0 1px 3px rgba(28,29,33,0.08); }
+
+  .period-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .period-label { font-size: 13.5px; font-weight: 700; }
+
+  .day-strip { display: flex; gap: 6px; margin-bottom: 10px; }
+  .day-chip { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 11px; border: 1px solid var(--c-border); background: var(--c-surface); }
+  .day-chip-wd { font-size: 10px; color: var(--c-ink-faint); }
+  .day-chip-num { font-size: 13px; font-weight: 700; }
+  .day-chip-today { border-color: var(--c-saffron); }
+  .day-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
+  .day-chip-active .day-chip-wd { color: rgba(255,255,255,0.75); }
+  .day-chip-active .day-chip-num { color: #fff; }
+  .today-jump { display: block; margin: 0 auto 12px; }
+
+  .habit-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+  .habit-top { display: flex; align-items: center; gap: 9px; }
+  .habit-bottom { display: flex; align-items: center; justify-content: space-between; padding-inline-start: 31px; }
+  .habit-streak { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-ink-soft); font-weight: 600; }
+  .habit-dots { display: flex; gap: 4px; }
+
+  .fab { position: absolute; bottom: 78px; inset-inline-end: 18px; width: 50px; height: 50px; border-radius: 50%; background: var(--c-primary); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(42,67,116,0.35); z-index: 5; }
+
+  .bottom-nav { position: sticky; bottom: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 5px 2px 7px; max-width: 460px; margin: 0 auto; width: 100%; }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; padding: 6px 0; color: var(--c-ink-faint); font-size: 9.5px; font-weight: 600; border-radius: 10px; }
+  .nav-btn-active { color: var(--c-primary); }
+
+  .sheet-backdrop { position: fixed; inset: 0; background: rgba(28,29,33,0.42); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+  .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 20px 20px 0 0; padding: 16px 18px 22px; max-height: 88vh; overflow-y: auto; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .sheet-title { font-size: 15px; font-weight: 800; }
+
+  .form { display: flex; flex-direction: column; gap: 4px; }
+  .field-label { font-size: 12px; font-weight: 700; color: var(--c-ink-soft); margin: 10px 0 6px; }
+  .text-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-bg); font-size: 13.5px; color: var(--c-ink); }
+  .text-input:focus { border-color: var(--c-primary); outline: none; }
+  .cat-picker { display: flex; flex-wrap: wrap; gap: 7px; }
+  .cat-picker-btn { display: flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12.5px; font-weight: 600; }
+  .primary-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: none; background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .primary-btn:disabled { opacity: 0.4; }
+  .secondary-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .danger-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid #E7C7BE; background: var(--c-danger-soft); color: var(--c-danger); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+
+  .duration-picker { display: flex; align-items: flex-end; justify-content: center; gap: 10px; background: var(--c-bg); border: 1.5px solid var(--c-border); border-radius: 14px; padding: 14px; margin-top: 4px; }
+  .dp-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .dp-label { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); }
+  .dp-select { font-size: 20px; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); text-align: center; }
+  .dp-sep { font-size: 22px; font-weight: 800; color: var(--c-ink-faint); padding-bottom: 10px; }
+  .dp-current { font-size: 12.5px; color: var(--c-ink-soft); margin: 0 0 10px; }
+
+  .big-stepper { display: flex; align-items: center; gap: 10px; }
+  .big-stepper button { width: 38px; height: 38px; min-width: 38px; border-radius: 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink); }
+  .big-stepper-input { text-align: center; font-size: 16px; font-weight: 800; }
+
+  .detail-title { font-size: 17px; font-weight: 800; margin: 0 0 14px; line-height: 1.5; }
+  .detail-field { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--c-border-soft); }
+  .detail-label { font-size: 11.5px; font-weight: 700; color: var(--c-ink-soft); min-width: 88px; flex-shrink: 0; padding-top: 1px; }
+  .detail-value { font-size: 13px; flex: 1; }
+  .detail-desc { white-space: pre-wrap; line-height: 1.7; }
+  .detail-actions { display: flex; gap: 10px; margin-top: 18px; }
+  .detail-actions button { margin-top: 0; }
+  .detail-progress { margin-top: 16px; padding: 14px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 14px; }
+  .detail-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
+  .detail-done-note { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-success); font-weight: 700; margin: 8px 0 0; }
+  .detail-log-title { display: block; margin: 16px 0 6px; }
+  .log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .log-row { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 9px; padding: 7px 10px; }
+  .log-row span:first-child { flex: 1; }
+  .log-val { font-weight: 700; color: var(--c-primary); }
+  .toggle-big-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13.5px; font-weight: 700; color: var(--c-ink); display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .toggle-big-done { background: var(--c-success-soft); border-color: #BEDCD3; color: var(--c-success); }
+  .heatmap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-bottom: 4px; }
+  .heat-cell { display: block; width: 100%; aspect-ratio: 1; border-radius: 4px; }
+
+  .settings-h { font-size: 13px; font-weight: 800; margin: 0 0 10px; }
+  .settings-h-gap { margin-top: 26px; }
+  .toggle-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; }
+  .toggle-row input { width: 18px; height: 18px; margin: 0; flex-shrink: 0; accent-color: var(--c-primary); }
+  .toggle-sub { display: block; font-size: 11px; font-weight: 500; color: var(--c-ink-faint); margin-top: 4px; line-height: 1.6; }
+
+  .chart-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 6px; }
+  .chart-box-row { display: flex; align-items: center; gap: 18px; padding: 14px 16px; }
+  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+  .legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--c-ink); }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .legend-val { margin-inline-start: auto; font-weight: 700; color: var(--c-ink-soft); }
+  .note-area { width: 100%; min-height: 84px; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); padding: 10px 12px; font-size: 13px; resize: vertical; color: var(--c-ink); }
+  .note-area:focus { border-color: var(--c-primary); outline: none; }
+  .note-area-sm { min-height: 56px; }
+
+  .review-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .review-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 12px; }
+  .review-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .review-period { font-size: 11.5px; font-weight: 700; color: var(--c-primary); }
+  .review-text { font-size: 12.5px; margin: 3px 0; line-height: 1.6; }
+
+  .toast { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); max-width: 420px; width: calc(100% - 32px); background: var(--c-ink); color: #fff; padding: 11px 14px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; z-index: 100; box-shadow: 0 6px 20px rgba(0,0,0,0.25); cursor: pointer; }
+
+  .cat-manage-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cat-manage-row { display: flex; align-items: center; gap: 9px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 10px; padding: 8px 10px; }
+  .cat-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .cat-manage-label { flex: 1; font-size: 13px; font-weight: 600; }
+  .swatch-row { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+  .swatch-active { border-color: var(--c-ink); }
+
+  .group-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px; margin-bottom: 14px; }
+  .group-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+  .group-card-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .group-card-head h4 { margin: 0; font-size: 14px; font-weight: 800; }
+  .tracker-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; }
+  .stepper { display: flex; align-items: center; gap: 6px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 999px; padding: 3px 6px; flex-shrink: 0; }
+  .stepper button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--c-border); background: #fff; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--c-ink-soft); }
+  .stepper-val { width: auto !important; min-width: 44px; border: none !important; background: none !important; font-size: 11.5px; font-weight: 700; color: var(--c-ink) !important; white-space: nowrap; padding: 0 4px !important; border-radius: 6px !important; }
+  .time-chip { display: flex; align-items: center; gap: 4px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 999px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; color: var(--c-ink); white-space: nowrap; flex-shrink: 0; }
+  .group-summary { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 5px; }
+  .group-summary-title { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); margin-bottom: 2px; }
+  .group-summary-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; }
+  .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
+
+  @media (prefers-reduced-motion: reduce) { .app-root * { transition: none !important; } }
+`;
 /* =========================================================================
    ROOT APP
    ========================================================================= */
@@ -1214,9 +1910,18 @@ function PlanningApp() {
   const [trackerGroups, setTrackerGroups] = useState([]);
   const [trackerItems, setTrackerItems] = useState([]);
   const [trackerLogs, setTrackerLogs] = useState({});
-  const [catSheetOpen, setCatSheetOpen] = useState(false);
+  const [settings, setSettings] = useState(DEFAULT_SETTINGS);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [detail, setDetail] = useState(null);   // { kind, id }
+  const [editing, setEditing] = useState(null); // { kind, item }
   const [toast, setToast] = useState(null);
   const today = useMemo(() => todayJalali(), []);
+  const didAutoRoll = useRef(false);
+
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  const curMonthKey = monthKey(today.jy, today.jm);
+  const curWeekStart = getWeekStart(today.jy, today.jm, today.jd);
+  const curWeekKey = dateKey(curWeekStart.jy, curWeekStart.jm, curWeekStart.jd);
 
   useEffect(() => {
     const d = loadAll();
@@ -1229,44 +1934,86 @@ function PlanningApp() {
     if (d.trackerGroups) setTrackerGroups(d.trackerGroups);
     if (d.trackerItems) setTrackerItems(d.trackerItems);
     if (d.trackerLogs) setTrackerLogs(d.trackerLogs);
+    if (d.settings) setSettings({ ...DEFAULT_SETTINGS, ...d.settings });
     setLoaded(true);
   }, []);
 
-  // --- goals ---
-  const addGoal = useCallback((goal) => setGoals((prev) => { const next = [...prev, goal]; persist("goals", next); return next; }), []);
-  const toggleGoal = useCallback((id) => setGoals((prev) => { const next = prev.map((g) => g.id === id ? { ...g, completed: !g.completed } : g); persist("goals", next); return next; }), []);
-  const deleteGoal = useCallback((id) => setGoals((prev) => { const next = prev.filter((g) => g.id !== id); persist("goals", next); return next; }), []);
+  const openDetail = useCallback((d) => setDetail(d), []);
+  const closeDetail = useCallback(() => setDetail(null), []);
 
-  // --- tasks ---
+  /* ---- goals ---- */
+  const addGoal = useCallback((goal) => setGoals((prev) => { const next = [...prev, goal]; persist("goals", next); return next; }), []);
+  const toggleGoal = useCallback((id) => setGoals((prev) => {
+    const next = prev.map((g) => g.id === id ? { ...g, completed: !g.completed } : g);
+    persist("goals", next); return next;
+  }), []);
+  const updateGoal = useCallback((id, data) => setGoals((prev) => {
+    const next = prev.map((g) => {
+      if (g.id !== id) return g;
+      const merged = { ...g, ...data };
+      // A goal that stops being measurable loses its auto-completion rule.
+      if (isMeasurable(merged)) merged.completed = goalProgress(merged) >= merged.targetValue;
+      return merged;
+    });
+    persist("goals", next); return next;
+  }), []);
+  const deleteGoal = useCallback((id) => setGoals((prev) => { const next = prev.filter((g) => g.id !== id); persist("goals", next); return next; }), []);
+  const logGoalProgress = useCallback((id, dk, delta) => setGoals((prev) => {
+    const next = prev.map((g) => {
+      if (g.id !== id) return g;
+      const progressLog = { ...(g.progressLog || {}) };
+      progressLog[dk] = (progressLog[dk] || 0) + delta;
+      if (progressLog[dk] <= 0) delete progressLog[dk];
+      const merged = { ...g, progressLog };
+      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
+      return merged;
+    });
+    persist("goals", next); return next;
+  }), []);
+  const clearGoalLogEntry = useCallback((id, dk) => setGoals((prev) => {
+    const next = prev.map((g) => {
+      if (g.id !== id) return g;
+      const progressLog = { ...(g.progressLog || {}) };
+      delete progressLog[dk];
+      const merged = { ...g, progressLog };
+      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
+      return merged;
+    });
+    persist("goals", next); return next;
+  }), []);
+
+  /* ---- tasks ---- */
   const addTask = useCallback((task) => {
     if (task.reminderTime) requestNotifyPermission();
     setTasks((prev) => { const next = [...prev, task]; persist("tasks", next); return next; });
   }, []);
   const toggleTask = useCallback((id) => setTasks((prev) => { const next = prev.map((t) => t.id === id ? { ...t, completed: !t.completed } : t); persist("tasks", next); return next; }), []);
+  const updateTask = useCallback((id, data) => setTasks((prev) => {
+    const next = prev.map((t) => t.id === id ? { ...t, ...data, reminderFired: data.reminderTime !== t.reminderTime ? false : t.reminderFired } : t);
+    persist("tasks", next); return next;
+  }), []);
   const deleteTask = useCallback((id) => setTasks((prev) => { const next = prev.filter((t) => t.id !== id); persist("tasks", next); return next; }), []);
 
-  // --- habits ---
+  /* ---- habits ---- */
   const addHabit = useCallback((habit) => setHabits((prev) => { const next = [...prev, habit]; persist("habits", next); return next; }), []);
-  const toggleHabit = useCallback((id, dk) => {
-    setHabits((prev) => {
-      const next = prev.map((h) => {
-        if (h.id !== id) return h;
-        const completions = { ...h.completions };
-        if (completions[dk]) delete completions[dk]; else completions[dk] = true;
-        return { ...h, completions };
-      });
-      persist("habits", next);
-      return next;
+  const toggleHabit = useCallback((id, dk) => setHabits((prev) => {
+    const next = prev.map((h) => {
+      if (h.id !== id) return h;
+      const completions = { ...h.completions };
+      if (completions[dk]) delete completions[dk]; else completions[dk] = true;
+      return { ...h, completions };
     });
-  }, []);
+    persist("habits", next); return next;
+  }), []);
+  const updateHabit = useCallback((id, data) => setHabits((prev) => { const next = prev.map((h) => h.id === id ? { ...h, ...data } : h); persist("habits", next); return next; }), []);
   const deleteHabit = useCallback((id) => setHabits((prev) => { const next = prev.filter((h) => h.id !== id); persist("habits", next); return next; }), []);
 
-  // --- notes / reviews ---
+  /* ---- notes / reviews ---- */
   const saveNote = useCallback((dk, text) => setNotes((prev) => { const next = { ...prev, [dk]: text }; persist("notes", next); return next; }), []);
   const addReview = useCallback((review) => setReviews((prev) => { const next = [...prev, review]; persist("reviews", next); return next; }), []);
   const deleteReview = useCallback((id) => setReviews((prev) => { const next = prev.filter((r) => r.id !== id); persist("reviews", next); return next; }), []);
 
-  // --- categories ---
+  /* ---- categories & settings ---- */
   const addCategory = useCallback((cat) => setCategories((prev) => { const next = [...prev, cat]; persist("categories", next); return next; }), []);
   const deleteCategory = useCallback((id) => {
     setCategories((prev) => {
@@ -1280,22 +2027,60 @@ function PlanningApp() {
       return next;
     });
   }, []);
+  const updateSettings = useCallback((patch) => setSettings((prev) => { const next = { ...prev, ...patch }; persist("settings", next); return next; }), []);
 
-  // --- tracker ---
+  /* ---- tracker ---- */
   const addTrackerGroup = useCallback((group) => setTrackerGroups((prev) => { const next = [...prev, group]; persist("trackerGroups", next); return next; }), []);
+  const editTrackerGroup = useCallback((id, data) => setTrackerGroups((prev) => { const next = prev.map((g) => g.id === id ? { ...g, ...data } : g); persist("trackerGroups", next); return next; }), []);
   const deleteTrackerGroup = useCallback((id) => {
     setTrackerGroups((prev) => { const next = prev.filter((g) => g.id !== id); persist("trackerGroups", next); return next; });
     setTrackerItems((prev) => { const next = prev.filter((it) => it.groupId !== id); persist("trackerItems", next); return next; });
   }, []);
   const addTrackerItem = useCallback((item) => setTrackerItems((prev) => { const next = [...prev, item]; persist("trackerItems", next); return next; }), []);
+  const updateTrackerItem = useCallback((id, data) => setTrackerItems((prev) => { const next = prev.map((it) => it.id === id ? { ...it, ...data } : it); persist("trackerItems", next); return next; }), []);
   const deleteTrackerItem = useCallback((id) => setTrackerItems((prev) => { const next = prev.filter((it) => it.id !== id); persist("trackerItems", next); return next; }), []);
   const setTrackerLog = useCallback((itemId, dk, value) => {
     setTrackerLogs((prev) => { const next = { ...prev, [`${itemId}:${dk}`]: value }; persist("trackerLogs", next); return next; });
   }, []);
 
-  // --- reminder polling: checks every 20s while the app is open ---
+  /* ---- rollover ---- */
+  const overdueTasks = useMemo(() => findOverdueTasks(tasks, todayKey), [tasks, todayKey]);
+  const overdueGoals = useMemo(() => findOverdueGoals(goals, curMonthKey, curWeekKey), [goals, curMonthKey, curWeekKey]);
+
+  const rolloverTasks = useCallback(() => {
+    setTasks((prev) => {
+      const next = prev.map((t) => (!t.completed && t.dateKey < todayKey)
+        ? { ...t, dateKey: todayKey, reminderFired: false, rolloverCount: (t.rolloverCount || 0) + 1 }
+        : t);
+      persist("tasks", next); return next;
+    });
+  }, [todayKey]);
+
+  const rolloverGoals = useCallback(() => {
+    setGoals((prev) => {
+      const next = prev.map((g) => {
+        if (g.completed) return g;
+        if (g.type === "monthly" && g.monthKey && g.monthKey < curMonthKey) {
+          return { ...g, monthKey: curMonthKey, rolloverCount: (g.rolloverCount || 0) + 1 };
+        }
+        if (g.type === "weekly" && g.weekKey && g.weekKey < curWeekKey) {
+          return { ...g, weekKey: curWeekKey, rolloverCount: (g.rolloverCount || 0) + 1 };
+        }
+        return g;
+      });
+      persist("goals", next); return next;
+    });
+  }, [curMonthKey, curWeekKey]);
+
   useEffect(() => {
-    const todayKey = dateKey(today.jy, today.jm, today.jd);
+    if (!loaded || didAutoRoll.current || !settings.autoRollover) return;
+    didAutoRoll.current = true;
+    if (findOverdueTasks(tasks, todayKey).length) rolloverTasks();
+    if (findOverdueGoals(goals, curMonthKey, curWeekKey).length) rolloverGoals();
+  }, [loaded, settings.autoRollover]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ---- reminder polling ---- */
+  useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
       const nowKey = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
@@ -1316,178 +2101,48 @@ function PlanningApp() {
       });
     }, 20000);
     return () => clearInterval(interval);
-  }, [today]);
+  }, [todayKey]);
 
   const allActiveGoals = useMemo(() => goals.filter((g) => !g.completed), [goals]);
+
+  /* ---- detail + edit routing ---- */
+  const detailItem = useMemo(() => {
+    if (!detail) return null;
+    if (detail.kind === "goal") return goals.find((g) => g.id === detail.id) || null;
+    if (detail.kind === "task") return tasks.find((t) => t.id === detail.id) || null;
+    if (detail.kind === "habit") return habits.find((h) => h.id === detail.id) || null;
+    if (detail.kind === "tracker") return trackerItems.find((it) => it.id === detail.id) || null;
+    return null;
+  }, [detail, goals, tasks, habits, trackerItems]);
+
+  const DETAIL_TITLES = { goal: "جزئیات هدف", task: "جزئیات کار", habit: "جزئیات عادت", tracker: "جزئیات مورد" };
+  const EDIT_TITLES = { goal: "ویرایش هدف", task: "ویرایش کار", habit: "ویرایش عادت", tracker: "ویرایش مورد" };
+
+  function startEdit() {
+    setEditing({ kind: detail.kind, item: detailItem });
+    setDetail(null);
+  }
+  function confirmDelete() {
+    const k = detail.kind, id = detail.id;
+    setDetail(null);
+    if (k === "goal") deleteGoal(id);
+    else if (k === "task") deleteTask(id);
+    else if (k === "habit") deleteHabit(id);
+    else if (k === "tracker") deleteTrackerItem(id);
+  }
+  function saveEdit(data) {
+    const { kind, item } = editing;
+    if (kind === "goal") updateGoal(item.id, data);
+    else if (kind === "task") updateTask(item.id, data);
+    else if (kind === "habit") updateHabit(item.id, data);
+    else if (kind === "tracker") updateTrackerItem(item.id, data);
+    setEditing(null);
+  }
 
   return (
     <CategoriesContext.Provider value={categories}>
       <div dir="rtl" className="app-root">
-        <style>{`
-          .app-root, .app-root * { box-sizing: border-box; }
-          .app-root {
-            --c-bg: #F7F7F5; --c-surface: #FFFFFF; --c-ink: #1C1D21; --c-ink-soft: #6B6D76; --c-ink-faint: #ADAFB6;
-            --c-primary: #2A4374; --c-primary-soft: #E8ECF5;
-            --c-saffron: #C1862F; --c-saffron-soft: #F5EBDA;
-            --c-success: #3E7C6B; --c-success-soft: #E3F0EC;
-            --c-plum: #7A4B6B; --c-plum-soft: #F1E7EE;
-            --c-danger: #B5533C; --c-danger-soft: #F6E6E1;
-            --c-border: #E6E4DF; --c-border-soft: #F0EFEB;
-            --c-spring: #3E7C6B; --c-spring-soft: #DCEAE5;
-            --c-summer: #C1862F; --c-summer-soft: #F1E3C9;
-            --c-autumn: #A9673A; --c-autumn-soft: #EEDDCE;
-            --c-winter: #2A4374; --c-winter-soft: #DEE3EE;
-            font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
-            background: var(--c-bg); color: var(--c-ink);
-            max-width: 460px; margin: 0 auto; min-height: 100vh; position: relative;
-            display: flex; flex-direction: column;
-          }
-          @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
-          .app-root button { font-family: inherit; cursor: pointer; }
-          .app-root :focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
-          .app-root input, .app-root select, .app-root textarea { font-family: inherit; }
-
-          .app-header { padding: 18px 18px 14px; background: var(--c-surface); border-bottom: 1px solid var(--c-border-soft); position: sticky; top: 0; z-index: 10; }
-          .app-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-          .app-wordmark { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
-          .header-right-group { display: flex; align-items: center; gap: 8px; }
-          .app-header-date { font-size: 12px; color: var(--c-ink-soft); font-weight: 500; }
-
-          .season-ring-wrap { display: flex; flex-direction: column; gap: 6px; }
-          .season-ring { display: flex; gap: 6px; }
-          .season-group { display: flex; gap: 2px; flex: 1; }
-          .season-seg { position: relative; flex: 1; height: 7px; border-radius: 4px; overflow: hidden; }
-          .season-seg-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-radius: 4px; transition: width .3s ease; }
-          .season-ring-label { font-size: 12px; color: var(--c-ink-soft); display: flex; align-items: center; gap: 6px; }
-          .season-ring-label .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--c-ink-faint); }
-
-          .tab-pane { padding: 16px 16px 90px; flex: 1; }
-
-          .stat-row { display: flex; gap: 10px; margin-bottom: 20px; }
-          .stat-card { flex: 1; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-          .stat-num { font-size: 19px; font-weight: 800; color: var(--c-primary); }
-          .stat-label { font-size: 11px; color: var(--c-ink-soft); }
-
-          .section { margin-bottom: 22px; }
-          .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-          .section-head h3 { font-size: 14px; font-weight: 700; margin: 0; }
-          .link-btn { background: none; border: none; color: var(--c-primary); font-size: 12px; font-weight: 600; padding: 0; }
-
-          .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-          .list-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; }
-          .list-text { flex: 1; font-size: 13.5px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .list-text-done { text-decoration: line-through; color: var(--c-ink-faint); }
-          .goal-row-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-          .goal-linked { font-size: 10.5px; color: var(--c-ink-faint); }
-
-          .check-circle { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: #fff; transition: all .15s ease; padding: 0; }
-          .check-circle-done { background: var(--c-success); border-color: var(--c-success); }
-
-          .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; }
-          .chip-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-
-          .empty-state { text-align: center; padding: 22px 10px; background: var(--c-surface); border: 1px dashed var(--c-border); border-radius: 14px; }
-          .empty-title { font-size: 13px; font-weight: 600; color: var(--c-ink-soft); margin: 0 0 3px; }
-          .empty-sub { font-size: 11.5px; color: var(--c-ink-faint); margin: 0; }
-
-          .add-inline-btn { margin-top: 10px; display: flex; align-items: center; gap: 5px; background: none; border: none; color: var(--c-primary); font-size: 12.5px; font-weight: 600; padding: 4px 0; }
-
-          .progress-track { width: 100%; height: 8px; border-radius: 5px; overflow: hidden; }
-          .progress-fill { height: 100%; border-radius: 5px; transition: width .3s ease; }
-          .goal-progress-row { margin-bottom: 10px; }
-          .goal-progress-label { font-size: 12px; color: var(--c-ink-soft); margin-bottom: 5px; font-weight: 500; }
-
-          .icon-btn { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); flex-shrink: 0; }
-          .icon-btn-solid { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
-
-          .segmented { display: flex; background: var(--c-border-soft); border-radius: 11px; padding: 3px; margin-bottom: 14px; gap: 3px; }
-          .segmented button { flex: 1; border: none; background: none; padding: 8px 0; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); }
-          .seg-active { background: var(--c-surface) !important; color: var(--c-primary) !important; box-shadow: 0 1px 3px rgba(28,29,33,0.08); }
-
-          .period-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-          .period-label { font-size: 13.5px; font-weight: 700; }
-
-          .day-strip { display: flex; gap: 6px; margin-bottom: 10px; }
-          .day-chip { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 11px; border: 1px solid var(--c-border); background: var(--c-surface); }
-          .day-chip-wd { font-size: 10px; color: var(--c-ink-faint); }
-          .day-chip-num { font-size: 13px; font-weight: 700; }
-          .day-chip-today { border-color: var(--c-saffron); }
-          .day-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
-          .day-chip-active .day-chip-wd { color: rgba(255,255,255,0.75); }
-          .day-chip-active .day-chip-num { color: #fff; }
-          .today-jump { display: block; margin: 0 auto 12px; }
-
-          .habit-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
-          .habit-top { display: flex; align-items: center; gap: 9px; }
-          .habit-bottom { display: flex; align-items: center; justify-content: space-between; padding-inline-start: 31px; }
-          .habit-streak { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-ink-soft); font-weight: 600; }
-          .habit-dots { display: flex; gap: 4px; }
-
-          .reminder-badge { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-soft); background: var(--c-border-soft); padding: 2px 6px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
-
-          .fab { position: absolute; bottom: 78px; inset-inline-end: 18px; width: 50px; height: 50px; border-radius: 50%; background: var(--c-primary); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(42,67,116,0.35); z-index: 5; }
-
-          .bottom-nav { position: sticky; bottom: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 5px 2px 7px; max-width: 460px; margin: 0 auto; width: 100%; }
-          .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; padding: 6px 0; color: var(--c-ink-faint); font-size: 9.5px; font-weight: 600; border-radius: 10px; }
-          .nav-btn-active { color: var(--c-primary); }
-
-          .sheet-backdrop { position: fixed; inset: 0; background: rgba(28,29,33,0.42); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
-          .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 20px 20px 0 0; padding: 16px 18px 22px; max-height: 85vh; overflow-y: auto; }
-          .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-          .sheet-title { font-size: 15px; font-weight: 800; }
-
-          .form { display: flex; flex-direction: column; gap: 4px; }
-          .field-label { font-size: 12px; font-weight: 700; color: var(--c-ink-soft); margin: 10px 0 6px; }
-          .text-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-bg); font-size: 13.5px; color: var(--c-ink); }
-          .text-input:focus { border-color: var(--c-primary); outline: none; }
-          .cat-picker { display: flex; flex-wrap: wrap; gap: 7px; }
-          .cat-picker-btn { display: flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12.5px; font-weight: 600; }
-          .primary-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: none; background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700; }
-          .primary-btn:disabled { opacity: 0.4; }
-
-          .chart-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 6px; }
-          .chart-box-row { display: flex; align-items: center; gap: 18px; padding: 14px 16px; }
-          .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; flex: 1; }
-          .legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--c-ink); }
-          .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-          .legend-val { margin-inline-start: auto; font-weight: 700; color: var(--c-ink-soft); }
-          .note-area { width: 100%; min-height: 84px; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); padding: 10px 12px; font-size: 13px; resize: vertical; color: var(--c-ink); }
-          .note-area:focus { border-color: var(--c-primary); outline: none; }
-          .note-area-sm { min-height: 56px; }
-
-          .review-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-          .review-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 12px; }
-          .review-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-          .review-period { font-size: 11.5px; font-weight: 700; color: var(--c-primary); }
-          .review-text { font-size: 12.5px; margin: 3px 0; line-height: 1.6; }
-
-          .toast { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); max-width: 420px; width: calc(100% - 32px); background: var(--c-ink); color: #fff; padding: 11px 14px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; z-index: 100; box-shadow: 0 6px 20px rgba(0,0,0,0.25); cursor: pointer; }
-
-          .cat-manage-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-          .cat-manage-row { display: flex; align-items: center; gap: 9px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 10px; padding: 8px 10px; }
-          .cat-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-          .cat-manage-label { flex: 1; font-size: 13px; font-weight: 600; }
-          .swatch-row { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
-          .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
-          .swatch-active { border-color: var(--c-ink); }
-
-          .group-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px; margin-bottom: 14px; }
-          .group-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-          .group-card-head h4 { margin: 0; font-size: 14px; font-weight: 800; }
-          .tracker-row { display: flex; align-items: center; gap: 9px; }
-          .tracker-row-main { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-          .tracker-desc { font-size: 10.5px; color: var(--c-ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .stepper { display: flex; align-items: center; gap: 6px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 999px; padding: 3px 8px; flex-shrink: 0; }
-          .stepper button { width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--c-border); background: #fff; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--c-ink-soft); }
-          .stepper span { font-size: 11.5px; font-weight: 700; min-width: 40px; text-align: center; white-space: nowrap; }
-          .group-summary { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 5px; }
-          .group-summary-title { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); margin-bottom: 2px; }
-          .group-summary-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; }
-          .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-          .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
-
-          @media (prefers-reduced-motion: reduce) { .app-root * { transition: none !important; } }
-        `}</style>
+        <style>{APP_CSS}</style>
 
         <Toast toast={toast} onClose={() => setToast(null)} />
 
@@ -1496,7 +2151,7 @@ function PlanningApp() {
             <span className="app-wordmark">گاه‌نما</span>
             <div className="header-right-group">
               <span className="app-header-date">{PERSIAN_WEEKDAYS[persianWeekdayIndex(today.jy, today.jm, today.jd)]}، {toFa(today.jd)} {PERSIAN_MONTHS[today.jm - 1]} {toFa(today.jy)}</span>
-              <IconBtn onClick={() => setCatSheetOpen(true)} label="مدیریت دسته‌بندی‌ها"><Settings size={16} /></IconBtn>
+              <IconBtn onClick={() => setSettingsOpen(true)} label="تنظیمات"><Settings size={16} /></IconBtn>
             </div>
           </div>
           <SeasonRing jy={today.jy} jm={today.jm} jd={today.jd} />
@@ -1506,22 +2161,72 @@ function PlanningApp() {
           <div className="tab-pane"><EmptyState text="در حال بارگذاری…" /></div>
         ) : (
           <>
-            {tab === "dashboard" && <DashboardTab today={today} goals={goals} tasks={tasks} habits={habits} toggleTask={toggleTask} toggleHabit={toggleHabit} setTab={setTab} />}
-            {tab === "goals" && <GoalsTab goals={goals} addGoal={addGoal} toggleGoal={toggleGoal} deleteGoal={deleteGoal} />}
-            {tab === "tasks" && <TasksTab today={today} tasks={tasks} goals={allActiveGoals} addTask={addTask} toggleTask={toggleTask} deleteTask={deleteTask} />}
-            {tab === "habits" && <HabitsTab today={today} habits={habits} addHabit={addHabit} toggleHabit={toggleHabit} deleteHabit={deleteHabit} />}
-            {tab === "tracker" && (
-              <TrackerTab
-                today={today} trackerGroups={trackerGroups} trackerItems={trackerItems} trackerLogs={trackerLogs}
-                addGroup={addTrackerGroup} deleteGroup={deleteTrackerGroup} addItem={addTrackerItem} deleteItem={deleteTrackerItem} setLog={setTrackerLog}
-              />
+            {tab === "dashboard" && (
+              <DashboardTab today={today} goals={goals} tasks={tasks} habits={habits}
+                toggleTask={toggleTask} toggleHabit={toggleHabit} setTab={setTab} openDetail={openDetail}
+                overdueTasks={overdueTasks} overdueGoals={overdueGoals}
+                rolloverTasks={rolloverTasks} rolloverGoals={rolloverGoals} />
             )}
-            {tab === "review" && <ReviewTab today={today} tasks={tasks} goals={goals} notes={notes} reviews={reviews} saveNote={saveNote} addReview={addReview} deleteReview={deleteReview} />}
+            {tab === "goals" && (
+              <GoalsTab today={today} goals={goals} addGoal={addGoal} toggleGoal={toggleGoal} openDetail={openDetail}
+                overdueGoals={overdueGoals} rolloverGoals={rolloverGoals} />
+            )}
+            {tab === "tasks" && (
+              <TasksTab today={today} tasks={tasks} goals={allActiveGoals} addTask={addTask} toggleTask={toggleTask}
+                openDetail={openDetail} overdueTasks={overdueTasks} rolloverTasks={rolloverTasks} />
+            )}
+            {tab === "habits" && (
+              <HabitsTab today={today} habits={habits} addHabit={addHabit} toggleHabit={toggleHabit} openDetail={openDetail} />
+            )}
+            {tab === "tracker" && (
+              <TrackerTab today={today} trackerGroups={trackerGroups} trackerItems={trackerItems} trackerLogs={trackerLogs}
+                addGroup={addTrackerGroup} editGroup={editTrackerGroup} deleteGroup={deleteTrackerGroup}
+                addItem={addTrackerItem} setLog={setTrackerLog} openDetail={openDetail} />
+            )}
+            {tab === "review" && (
+              <ReviewTab today={today} tasks={tasks} goals={goals} notes={notes} reviews={reviews}
+                saveNote={saveNote} addReview={addReview} deleteReview={deleteReview} />
+            )}
           </>
         )}
 
         <BottomNav tab={tab} setTab={setTab} />
-        <CategorySettingsSheet open={catSheetOpen} onClose={() => setCatSheetOpen(false)} categories={categories} addCategory={addCategory} deleteCategory={deleteCategory} />
+
+        <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)}
+          categories={categories} addCategory={addCategory} deleteCategory={deleteCategory}
+          settings={settings} updateSettings={updateSettings} />
+
+        <Sheet open={!!detailItem} onClose={closeDetail} title={detail ? DETAIL_TITLES[detail.kind] : ""}>
+          {detailItem && (
+            <>
+              <h3 className="detail-title">{detailItem.title}</h3>
+              {detail.kind === "goal" && (
+                <GoalDetail goal={detailItem} goals={goals} today={today}
+                  onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleGoal}
+                  onLogProgress={logGoalProgress} onClearLogEntry={clearGoalLogEntry} />
+              )}
+              {detail.kind === "task" && (
+                <TaskDetail task={detailItem} goals={goals} onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleTask} />
+              )}
+              {detail.kind === "habit" && (
+                <HabitDetail habit={detailItem} today={today} onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleHabit} />
+              )}
+              {detail.kind === "tracker" && (
+                <TrackerItemDetail item={detailItem} trackerLogs={trackerLogs} today={today}
+                  onEdit={startEdit} onDelete={confirmDelete} onSetLog={setTrackerLog} />
+              )}
+            </>
+          )}
+        </Sheet>
+
+        <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing ? EDIT_TITLES[editing.kind] : ""}>
+          {editing && editing.kind === "goal" && (
+            <GoalForm initial={editing.item} monthlyGoals={editing.item.type === "weekly" ? goals.filter((g) => g.type === "monthly") : null} onSave={saveEdit} />
+          )}
+          {editing && editing.kind === "task" && <TaskForm initial={editing.item} goals={allActiveGoals} onSave={saveEdit} />}
+          {editing && editing.kind === "habit" && <HabitForm initial={editing.item} onSave={saveEdit} />}
+          {editing && editing.kind === "tracker" && <TrackerItemForm initial={editing.item} onSave={saveEdit} />}
+        </Sheet>
       </div>
     </CategoriesContext.Provider>
   );

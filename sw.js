@@ -1,4 +1,4 @@
-const CACHE_NAME = "gahnama-v1";
+const CACHE_NAME = "gahnama-v2";
 const CORE_ASSETS = [
   "./",
   "./index.html",
