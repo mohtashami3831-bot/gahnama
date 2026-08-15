@@ -59,6 +59,9 @@ const TrendingUp = (p) => <Icon {...p}><polyline points="3 17 9 11 13 15 21 6" /
 const Bell = (p) => <Icon {...p}><path d="M6 8a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z" /><path d="M10 21a2 2 0 0 0 4 0" /></Icon>;
 const Settings = (p) => <Icon {...p}><line x1="4" y1="7" x2="20" y2="7" /><circle cx="9" cy="7" r="2" fill="currentColor" stroke="none" /><line x1="4" y1="14" x2="20" y2="14" /><circle cx="16" cy="14" r="2" fill="currentColor" stroke="none" /><line x1="4" y1="19" x2="20" y2="19" /><circle cx="11" cy="19" r="2" fill="currentColor" stroke="none" /></Icon>;
 const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><polyline points="12 7.5 12 12 15.5 14" /></Icon>;
+const ChevronDown = (p) => <Icon {...p}><polyline points="6 9 12 15 18 9" /></Icon>;
+const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></Icon>;
+const FileText = (p) => <Icon {...p}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" /><polyline points="14 3 14 8 19 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></Icon>;
 const LayoutGrid = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></Icon>;
 const Pencil = (p) => <Icon {...p}><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z" /></Icon>;
 const ArrowDown = (p) => <Icon {...p}><line x1="12" y1="4" x2="12" y2="18" /><polyline points="6 13 12 19 18 13" /></Icon>;
@@ -310,16 +313,68 @@ const DEFAULT_SETTINGS = { autoRollover: false };
 /* =========================================================================
    GOAL PROGRESS HELPERS
    A goal can be "simple" (manual checkbox) or measurable by count or time.
-   Measurable goals accumulate daily entries in progressLog and complete
-   themselves once the total reaches the target.
+   Measurable goals accumulate entries in progressEntries — each entry is a
+   dated amount with an optional note — and complete themselves once the
+   running total reaches the target.
+
+   Earlier versions stored progress as a { dateKey: amount } map. migrateGoal
+   converts that shape on load so existing data keeps its progress.
    ========================================================================= */
 
+const MAX_HOURS = 2000;
+
 function isMeasurable(goal) { return goal.targetType === "count" || goal.targetType === "time"; }
+
+function migrateGoal(g) {
+  if (Array.isArray(g.progressEntries)) return g;
+  const entries = [];
+  if (g.progressLog && typeof g.progressLog === "object") {
+    for (const dk of Object.keys(g.progressLog).sort()) {
+      const v = g.progressLog[dk];
+      if (v) entries.push({ id: `mig_${dk}_${Math.random().toString(36).slice(2, 7)}`, dateKey: dk, value: v, note: null });
+    }
+  }
+  const out = { ...g, progressEntries: entries };
+  delete out.progressLog;
+  return out;
+}
+
 function goalProgress(goal) {
-  if (!goal.progressLog) return 0;
+  const entries = goal.progressEntries;
+  if (!Array.isArray(entries)) return 0;
   let sum = 0;
-  for (const k in goal.progressLog) sum += goal.progressLog[k] || 0;
+  for (const e of entries) sum += e.value || 0;
   return sum;
+}
+
+/* Tracker daily logs are keyed "itemId:dateKey". Earlier versions stored a
+   bare value; they now store { value, note }. These readers accept both, so
+   old and new records coexist safely. */
+function trackerRaw(logs, itemId, dk) { return logs[`${itemId}:${dk}`]; }
+function trackerValue(logs, itemId, dk, type) {
+  const raw = trackerRaw(logs, itemId, dk);
+  if (raw === undefined || raw === null) return type === "boolean" ? false : 0;
+  if (typeof raw === "object") return raw.value;
+  return raw;
+}
+function trackerNote(logs, itemId, dk) {
+  const raw = trackerRaw(logs, itemId, dk);
+  return (raw && typeof raw === "object" && raw.note) ? raw.note : null;
+}
+function trackerHasEntry(logs, itemId, dk) {
+  const raw = trackerRaw(logs, itemId, dk);
+  if (raw === undefined || raw === null) return false;
+  const v = typeof raw === "object" ? raw.value : raw;
+  return !(v === false || v === 0 || v === undefined || v === null);
+}
+function migrateTrackerLogs(logs) {
+  if (!logs || typeof logs !== "object") return {};
+  const out = {};
+  for (const k in logs) {
+    const raw = logs[k];
+    out[k] = (raw && typeof raw === "object") ? raw : { value: raw, note: null };
+  }
+  return out;
 }
 function goalProgressText(goal) {
   const p = goalProgress(goal);
@@ -476,13 +531,21 @@ function CategoryPicker({ value, onChange }) {
    ========================================================================= */
 
 function DurationPicker({ hours, minutes, setHours, setMinutes }) {
+  // Hours is a typed field rather than a dropdown: the range runs to 2000,
+  // which is far past the point where scrolling a list stops being usable.
   return (
     <div className="duration-picker">
       <div className="dp-col">
         <span className="dp-label">ساعت</span>
-        <select className="dp-select" value={hours} onChange={(e) => setHours(Number(e.target.value))}>
-          {Array.from({ length: 25 }, (_, i) => i).map((h) => <option key={h} value={h}>{toFa(h)}</option>)}
-        </select>
+        <div className="dp-hours">
+          <button onClick={() => setHours(Math.max(0, hours - 1))} aria-label="کم کردن ساعت"><Minus size={14} /></button>
+          <input
+            className="dp-num" type="number" inputMode="numeric" min="0" max={MAX_HOURS} value={hours}
+            onChange={(e) => setHours(Math.max(0, Math.min(MAX_HOURS, Math.floor(Number(e.target.value)) || 0)))}
+            onFocus={(e) => e.target.select()}
+          />
+          <button onClick={() => setHours(Math.min(MAX_HOURS, hours + 1))} aria-label="زیاد کردن ساعت"><Plus size={14} /></button>
+        </div>
       </div>
       <span className="dp-sep">:</span>
       <div className="dp-col">
@@ -495,28 +558,93 @@ function DurationPicker({ hours, minutes, setHours, setMinutes }) {
   );
 }
 
-function DurationSheet({ open, onClose, title, currentMinutes, onAdd, onSet, addLabel = "افزودن به مجموع" }) {
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(0);
-  useEffect(() => { if (open) { setHours(0); setMinutes(0); } }, [open]);
+function NoteField({ value, onChange }) {
+  return (
+    <>
+      <label className="field-label">توضیحات (اختیاری)</label>
+      <textarea className="note-area note-area-sm" value={value} onChange={(e) => onChange(e.target.value)}
+        placeholder="مثلاً: چه کاری انجام شد؟" />
+    </>
+  );
+}
+
+/* Horizontal strip of recent days, newest first (rightmost in RTL), so a
+   record can be filed against an earlier day rather than only today. */
+function DayPicker({ today, value, onChange, days = 30 }) {
+  const list = useMemo(() => {
+    const start = addDaysJalali(today.jy, today.jm, today.jd, -(days - 1));
+    return Array.from({ length: days }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i)).reverse();
+  }, [today.jy, today.jm, today.jd, days]);
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  return (
+    <>
+      <label className="field-label">تاریخ ثبت</label>
+      <div className="day-picker">
+        {list.map((d) => {
+          const dk = dateKey(d.jy, d.jm, d.jd);
+          const sel = dk === value;
+          return (
+            <button key={dk} type="button" className={"dpk-chip" + (sel ? " dpk-chip-active" : "")} onClick={() => onChange(dk)}>
+              <span className="dpk-wd">{dk === todayKey ? "امروز" : PERSIAN_WEEKDAYS_SHORT[persianWeekdayIndex(d.jy, d.jm, d.jd)]}</span>
+              <span className="dpk-num">{toFa(d.jd)}</span>
+              <span className="dpk-mo">{PERSIAN_MONTHS[d.jm - 1].slice(0, 3)}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function DurationSheet({
+  open, onClose, title, currentMinutes, onAdd, onSet, addLabel = "افزودن به مجموع",
+  withNote = false, initialValue = 0, initialNote = "", allowDate = false, today, initialDate,
+}) {
+  const [hours, setHours] = useState(Math.floor((initialValue || 0) / 60));
+  const [minutes, setMinutes] = useState((initialValue || 0) % 60);
+  const [note, setNote] = useState(initialNote || "");
+  const [day, setDay] = useState(initialDate);
+  // The sheet stays mounted while closed, so re-sync whenever it reopens
+  // with a different target (initial state alone only covers a fresh mount).
+  useEffect(() => {
+    if (!open) return;
+    setHours(Math.floor((initialValue || 0) / 60));
+    setMinutes((initialValue || 0) % 60);
+    setNote(initialNote || "");
+    setDay(initialDate);
+  }, [open, initialValue, initialNote, initialDate]);
   const total = hours * 60 + minutes;
+  const noteArg = withNote ? (note.trim() || null) : undefined;
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       {currentMinutes !== undefined && (
         <p className="dp-current">مقدار فعلی: <b>{formatMinutes(currentMinutes)}</b></p>
       )}
       <DurationPicker hours={hours} minutes={minutes} setHours={setHours} setMinutes={setMinutes} />
-      <button className="primary-btn" disabled={total === 0} onClick={() => { onAdd(total); onClose(); }}>{addLabel}</button>
+      {allowDate && today && <DayPicker today={today} value={day} onChange={setDay} />}
+      {withNote && <NoteField value={note} onChange={setNote} />}
+      <button className="primary-btn" disabled={total === 0} onClick={() => { onAdd(total, noteArg, day); onClose(); }}>{addLabel}</button>
       {onSet && (
-        <button className="secondary-btn" onClick={() => { onSet(total); onClose(); }}>جایگزینی مقدار کل با {formatMinutes(total)}</button>
+        <button className="secondary-btn" onClick={() => { onSet(total, noteArg, day); onClose(); }}>جایگزینی مقدار کل با {formatMinutes(total)}</button>
       )}
     </Sheet>
   );
 }
 
-function CountSheet({ open, onClose, title, unit, currentValue, onAdd, onSet }) {
-  const [val, setVal] = useState(1);
-  useEffect(() => { if (open) setVal(1); }, [open]);
+function CountSheet({
+  open, onClose, title, unit, currentValue, onAdd, onSet, addLabel = "افزودن به مجموع",
+  withNote = false, initialValue = 1, initialNote = "", allowDate = false, today, initialDate,
+}) {
+  const [val, setVal] = useState(initialValue === undefined ? 1 : initialValue);
+  const [note, setNote] = useState(initialNote || "");
+  const [day, setDay] = useState(initialDate);
+  useEffect(() => {
+    if (!open) return;
+    setVal(initialValue === undefined ? 1 : initialValue);
+    setNote(initialNote || "");
+    setDay(initialDate);
+  }, [open, initialValue, initialNote, initialDate]);
+  const noteArg = withNote ? (note.trim() || null) : undefined;
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       {currentValue !== undefined && (
@@ -525,11 +653,13 @@ function CountSheet({ open, onClose, title, unit, currentValue, onAdd, onSet }) 
       <label className="field-label">مقدار{unit ? ` (${unit})` : ""}</label>
       <div className="big-stepper">
         <button onClick={() => setVal((v) => Math.max(0, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
-        <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={val} onChange={(e) => setVal(Math.max(0, Number(e.target.value) || 0))} />
+        <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={val} onChange={(e) => setVal(Math.max(0, Number(e.target.value) || 0))} onFocus={(e) => e.target.select()} />
         <button onClick={() => setVal((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
       </div>
-      <button className="primary-btn" disabled={val === 0} onClick={() => { onAdd(val); onClose(); }}>افزودن به مجموع</button>
-      {onSet && <button className="secondary-btn" onClick={() => { onSet(val); onClose(); }}>جایگزینی مقدار کل با {toFa(val)}{unit ? " " + unit : ""}</button>}
+      {allowDate && today && <DayPicker today={today} value={day} onChange={setDay} />}
+      {withNote && <NoteField value={note} onChange={setNote} />}
+      <button className="primary-btn" disabled={val === 0} onClick={() => { onAdd(val, noteArg, day); onClose(); }}>{addLabel}</button>
+      {onSet && <button className="secondary-btn" onClick={() => { onSet(val, noteArg, day); onClose(); }}>جایگزینی مقدار کل با {toFa(val)}{unit ? " " + unit : ""}</button>}
     </Sheet>
   );
 }
@@ -592,6 +722,48 @@ function SettingsSheet({ open, onClose, categories, addCategory, deleteCategory,
           <span className="toggle-sub">اگر خاموش باشد، پیشنهاد انتقال را می‌بینی و خودت تصمیم می‌گیری.</span>
         </span>
       </label>
+    </Sheet>
+  );
+}
+
+/* Search across every kind of item, matching title and description.
+   Selecting a result opens that item's detail sheet. */
+function SearchSheet({ open, onClose, goals, tasks, habits, trackerItems, onOpenDetail }) {
+  const [q, setQ] = useState("");
+  useEffect(() => { if (open) setQ(""); }, [open]);
+  const term = q.trim().toLowerCase();
+  const match = (o) => {
+    if (!term) return false;
+    return (o.title || "").toLowerCase().includes(term) || (o.description || "").toLowerCase().includes(term);
+  };
+  const groups = [
+    { kind: "goal", label: "اهداف", items: goals.filter(match) },
+    { kind: "task", label: "وظایف", items: tasks.filter(match) },
+    { kind: "habit", label: "عادت‌ها", items: habits.filter(match) },
+    { kind: "tracker", label: "موارد ردیاب", items: trackerItems.filter(match) },
+  ].filter((g) => g.items.length > 0);
+  const total = groups.reduce((s, g) => s + g.items.length, 0);
+
+  return (
+    <Sheet open={open} onClose={onClose} title="جست‌وجو">
+      <input className="text-input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="عنوان یا توضیحات…" autoFocus />
+      {term && total === 0 && <p className="search-empty">چیزی پیدا نشد.</p>}
+      {groups.map((g) => (
+        <div key={g.kind} className="search-group">
+          <span className="detail-label detail-log-title">{g.label} ({toFa(g.items.length)})</span>
+          <ul className="list">
+            {g.items.map((it) => (
+              <li key={it.id} className="list-row">
+                <button className="row-body" onClick={() => { onOpenDetail({ kind: g.kind, id: it.id }); onClose(); }}>
+                  <span className={"list-text" + (it.completed ? " list-text-done" : "")}>{it.title}</span>
+                  {it.description && <span className="row-desc">{it.description}</span>}
+                </button>
+                {it.category && <CategoryChip id={it.category} />}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </Sheet>
   );
 }
@@ -714,6 +886,7 @@ const GoalRow = memo(function GoalRow({ goal, linkedTitle, onToggle, onOpen }) {
         )}
       </button>
       {goal.rolloverCount > 0 && <span className="rolled-badge" title="منتقل‌شده">{toFa(goal.rolloverCount)}↩</span>}
+      {goal.reminderTime && <span className="reminder-badge"><Clock size={11} />{toFa(goal.reminderTime)}</span>}
       <CategoryChip id={goal.category} />
     </li>
   );
@@ -740,6 +913,7 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onOpen }) {
           <span className="list-text">{habit.title}</span>
           {habit.description && <span className="row-desc">{habit.description}</span>}
         </button>
+        {habit.reminderTime && <span className="reminder-badge"><Clock size={11} />{toFa(habit.reminderTime)}</span>}
         <CategoryChip id={habit.category} />
       </div>
       <div className="habit-bottom">
@@ -793,8 +967,48 @@ function DetailActions({ onEdit, onDelete }) {
   );
 }
 
-function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgress, onClearLogEntry }) {
+/* One row of a progress history. Tapping expands it in place to reveal the
+   full note plus edit/delete, so a long note never pushes the rest of the
+   history off screen and the row stays a single line when collapsed. */
+function LogEntryRow({ entry, targetType, unit, todayKey, valueText, onEdit, onDelete }) {
+  const [open, setOpen] = useState(false);
+  const [jy, jm, jd] = entry.dateKey.split("-").map(Number);
+  const hasNote = !!entry.note;
+  const dateText = `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]}${entry.dateKey === todayKey ? " (امروز)" : ""}`;
+  const shown = valueText !== undefined ? valueText : formatAmount(targetType, entry.value, unit);
+  const expandable = !!(onEdit || onDelete || hasNote);
+  return (
+    <li className={"log-row" + (open ? " log-row-open" : "")}>
+      <div className="log-row-top">
+        {expandable ? (
+          <button className="log-row-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+            <span className="log-date">{dateText}</span>
+            {hasNote && !open && <span className="log-note-preview">{entry.note}</span>}
+            <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", flexShrink: 0, color: "var(--c-ink-faint)" }} />
+          </button>
+        ) : (
+          <span className="log-row-btn log-row-static"><span className="log-date">{dateText}</span></span>
+        )}
+        <span className="log-val">{shown}</span>
+      </div>
+      {open && (
+        <>
+          {hasNote && <p className="log-note-full">{entry.note}</p>}
+          {(onEdit || onDelete) && (
+            <div className="log-row-actions">
+              {onEdit && <button className="mini-btn" onClick={onEdit}><Pencil size={12} /> ویرایش</button>}
+              {onDelete && <button className="mini-btn mini-btn-danger" onClick={onDelete}><Trash2 size={12} /> حذف</button>}
+            </div>
+          )}
+        </>
+      )}
+    </li>
+  );
+}
+
+function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgress, onUpdateEntry, onClearLogEntry }) {
   const [amountSheet, setAmountSheet] = useState(false);
+  const [editEntry, setEditEntry] = useState(null);
   const measurable = isMeasurable(goal);
   const todayKey = dateKey(today.jy, today.jm, today.jd);
   const linked = goal.linkedMonthlyId ? goals.find((g) => g.id === goal.linkedMonthlyId) : null;
@@ -803,7 +1017,7 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
     ? (() => { const [jy, jm] = goal.monthKey.split("-").map(Number); return `${PERSIAN_MONTHS[jm - 1]} ${toFa(jy)}`; })()
     : (() => { const [jy, jm, jd] = goal.weekKey.split("-").map(Number); const end = addDaysJalali(jy, jm, jd, 6); return `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]} تا ${toFa(end.jd)} ${PERSIAN_MONTHS[end.jm - 1]}`; })();
 
-  const logEntries = Object.keys(goal.progressLog || {}).sort().reverse();
+  const logEntries = (goal.progressEntries || []).slice().sort((a, b) => (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : 0));
 
   return (
     <>
@@ -811,6 +1025,7 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
       <DetailField label="نوع">{goal.type === "monthly" ? "هدف ماهانه" : "هدف هفتگی"}</DetailField>
       <DetailField label="بازه">{periodText}</DetailField>
       {linked && <DetailField label="مرتبط با">{linked.title}</DetailField>}
+      {goal.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(goal.reminderTime)}</DetailField>}
       {goal.rolloverCount > 0 && <DetailField label="انتقال">{toFa(goal.rolloverCount)} بار از بازهٔ قبل منتقل شده</DetailField>}
       {goal.description && <DetailField label="توضیحات"><span className="detail-desc">{goal.description}</span></DetailField>}
 
@@ -823,23 +1038,19 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
           <ProgressBar value={goalProgressPct(goal)} color={goal.completed ? "var(--c-success)" : "var(--c-primary)"} />
           {goal.completed && <p className="detail-done-note"><Check size={13} /> به هدف رسیدی</p>}
           <button className="primary-btn" onClick={() => setAmountSheet(true)}>
-            <Plus size={15} /> ثبت پیشرفت امروز
+            <Plus size={15} /> ثبت پیشرفت
           </button>
 
           {logEntries.length > 0 && (
             <>
-              <span className="detail-label detail-log-title">ثبت‌های روزانه</span>
+              <span className="detail-label detail-log-title">ثبت‌های پیشرفت</span>
               <ul className="log-list">
-                {logEntries.map((dk) => {
-                  const [jy, jm, jd] = dk.split("-").map(Number);
-                  return (
-                    <li key={dk} className="log-row">
-                      <span>{toFa(jd)} {PERSIAN_MONTHS[jm - 1]}{dk === todayKey ? " (امروز)" : ""}</span>
-                      <span className="log-val">{formatAmount(goal.targetType, goal.progressLog[dk], goal.unit)}</span>
-                      <IconBtn onClick={() => onClearLogEntry(goal.id, dk)} label="حذف این ثبت"><Trash2 size={13} /></IconBtn>
-                    </li>
-                  );
-                })}
+                {logEntries.map((entry) => (
+                  <LogEntryRow key={entry.id} entry={entry} targetType={goal.targetType} unit={goal.unit}
+                    todayKey={todayKey}
+                    onEdit={() => setEditEntry(entry)}
+                    onDelete={() => onClearLogEntry(goal.id, entry.id)} />
+                ))}
               </ul>
             </>
           )}
@@ -853,18 +1064,42 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
       <DetailActions onEdit={onEdit} onDelete={onDelete} />
 
       {goal.targetType === "time" && (
-        <DurationSheet
-          open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت زمان انجام‌شده"
-          currentMinutes={goalProgress(goal)}
-          onAdd={(mins) => onLogProgress(goal.id, todayKey, mins)}
-        />
+        <>
+          <DurationSheet
+            open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت زمان انجام‌شده"
+            currentMinutes={goalProgress(goal)} withNote allowDate today={today} initialDate={todayKey}
+            addLabel="ثبت"
+            onAdd={(mins, note, dk) => onLogProgress(goal.id, dk || todayKey, mins, note)}
+          />
+          <DurationSheet
+            open={!!editEntry} onClose={() => setEditEntry(null)} title="ویرایش ثبت"
+            withNote allowDate today={today}
+            initialValue={editEntry ? editEntry.value : 0}
+            initialNote={editEntry ? editEntry.note || "" : ""}
+            initialDate={editEntry ? editEntry.dateKey : todayKey}
+            addLabel="ذخیرهٔ تغییرات"
+            onAdd={(mins, note, dk) => onUpdateEntry(goal.id, editEntry.id, { value: mins, note, dateKey: dk || editEntry.dateKey })}
+          />
+        </>
       )}
       {goal.targetType === "count" && (
-        <CountSheet
-          open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت مقدار انجام‌شده"
-          unit={goal.unit} currentValue={goalProgress(goal)}
-          onAdd={(v) => onLogProgress(goal.id, todayKey, v)}
-        />
+        <>
+          <CountSheet
+            open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت مقدار انجام‌شده"
+            unit={goal.unit} currentValue={goalProgress(goal)} withNote allowDate today={today} initialDate={todayKey}
+            addLabel="ثبت"
+            onAdd={(v, note, dk) => onLogProgress(goal.id, dk || todayKey, v, note)}
+          />
+          <CountSheet
+            open={!!editEntry} onClose={() => setEditEntry(null)} title="ویرایش ثبت"
+            unit={goal.unit} withNote allowDate today={today}
+            initialValue={editEntry ? editEntry.value : 1}
+            initialNote={editEntry ? editEntry.note || "" : ""}
+            initialDate={editEntry ? editEntry.dateKey : todayKey}
+            addLabel="ذخیرهٔ تغییرات"
+            onAdd={(v, note, dk) => onUpdateEntry(goal.id, editEntry.id, { value: v, note, dateKey: dk || editEntry.dateKey })}
+          />
+        </>
       )}
     </>
   );
@@ -906,6 +1141,7 @@ function HabitDetail({ habit, today, onEdit, onDelete, onToggle }) {
       <DetailField label="دسته‌بندی"><CategoryChip id={habit.category} /></DetailField>
       <DetailField label="روزهای پیاپی">{toFa(streak)} روز</DetailField>
       <DetailField label="مجموع روزهای انجام‌شده">{toFa(total)} روز</DetailField>
+      {habit.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(habit.reminderTime)}</DetailField>}
       {habit.description && <DetailField label="توضیحات"><span className="detail-desc">{habit.description}</span></DetailField>}
       <span className="detail-label detail-log-title">۳۰ روز اخیر</span>
       <div className="heatmap">
@@ -925,13 +1161,22 @@ function HabitDetail({ habit, today, onEdit, onDelete, onToggle }) {
 
 function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLog }) {
   const [sheet, setSheet] = useState(false);
+  const [editDay, setEditDay] = useState(null);
   const todayKey = dateKey(today.jy, today.jm, today.jd);
-  const current = trackerLogs[`${item.id}:${todayKey}`] || (item.type === "boolean" ? false : 0);
+  const current = trackerValue(trackerLogs, item.id, todayKey, item.type);
+  const currentNote = trackerNote(trackerLogs, item.id, todayKey);
   const last14 = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -13);
     return Array.from({ length: 14 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
   }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const typeLabel = (TRACKER_TYPES.find((t) => t.id === item.type) || {}).label;
+
+  // The sheet edits one specific day: today when adding, or the tapped day.
+  const targetDay = editDay || todayKey;
+  const targetVal = trackerValue(trackerLogs, item.id, targetDay, item.type);
+  const targetNote = trackerNote(trackerLogs, item.id, targetDay);
+  const sheetOpen = sheet || !!editDay;
+  function closeSheet() { setSheet(false); setEditDay(null); }
 
   return (
     <>
@@ -945,9 +1190,15 @@ function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLo
           <b>{item.type === "boolean" ? (current ? "انجام شده" : "انجام نشده") : formatAmount(item.type, current, item.unit)}</b>
         </div>
         {item.type === "boolean" ? (
-          <button className={"toggle-big-btn" + (current ? " toggle-big-done" : "")} onClick={() => onSetLog(item.id, todayKey, !current)}>
-            {current ? <><Check size={15} /> برگرداندن</> : "ثبت انجام برای امروز"}
-          </button>
+          <>
+            <button className={"toggle-big-btn" + (current ? " toggle-big-done" : "")} onClick={() => onSetLog(item.id, todayKey, !current, currentNote)}>
+              {current ? <><Check size={15} /> برگرداندن</> : "ثبت انجام برای امروز"}
+            </button>
+            <label className="field-label">توضیح امروز (اختیاری)</label>
+            <textarea className="note-area note-area-sm" value={currentNote || ""}
+              placeholder="مثلاً: چطور پیش رفت؟"
+              onChange={(e) => onSetLog(item.id, todayKey, current, e.target.value.trim() || null)} />
+          </>
         ) : (
           <button className="primary-btn" onClick={() => setSheet(true)}><Plus size={15} /> ثبت مقدار</button>
         )}
@@ -957,13 +1208,17 @@ function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLo
       <ul className="log-list">
         {last14.slice().reverse().map((d) => {
           const dk = dateKey(d.jy, d.jm, d.jd);
-          const v = trackerLogs[`${item.id}:${dk}`];
-          if (v === undefined || v === false || v === 0) return null;
+          if (!trackerHasEntry(trackerLogs, item.id, dk)) return null;
+          const v = trackerValue(trackerLogs, item.id, dk, item.type);
+          const n = trackerNote(trackerLogs, item.id, dk);
           return (
-            <li key={dk} className="log-row">
-              <span>{toFa(d.jd)} {PERSIAN_MONTHS[d.jm - 1]}{dk === todayKey ? " (امروز)" : ""}</span>
-              <span className="log-val">{item.type === "boolean" ? "✓" : formatAmount(item.type, v, item.unit)}</span>
-            </li>
+            <LogEntryRow
+              key={dk} entry={{ id: dk, dateKey: dk, value: v, note: n }}
+              targetType={item.type} unit={item.unit} todayKey={todayKey}
+              valueText={item.type === "boolean" ? "✓" : formatAmount(item.type, v, item.unit)}
+              onEdit={item.type === "boolean" ? undefined : () => setEditDay(dk)}
+              onDelete={() => onSetLog(item.id, dk, item.type === "boolean" ? false : 0, null)}
+            />
           );
         })}
       </ul>
@@ -971,16 +1226,20 @@ function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLo
       <DetailActions onEdit={onEdit} onDelete={onDelete} />
 
       {item.type === "time" && (
-        <DurationSheet open={sheet} onClose={() => setSheet(false)} title="ثبت زمان"
-          currentMinutes={current}
-          onAdd={(mins) => onSetLog(item.id, todayKey, current + mins)}
-          onSet={(mins) => onSetLog(item.id, todayKey, mins)} />
+        <DurationSheet open={sheetOpen} onClose={closeSheet}
+          title={editDay ? "ویرایش زمان" : "ثبت زمان"}
+          currentMinutes={targetVal} withNote initialNote={targetNote || ""}
+          allowDate today={today} initialDate={targetDay}
+          onAdd={(mins, note, dk) => onSetLog(item.id, dk || targetDay, trackerValue(trackerLogs, item.id, dk || targetDay, item.type) + mins, note)}
+          onSet={(mins, note, dk) => onSetLog(item.id, dk || targetDay, mins, note)} />
       )}
       {item.type === "count" && (
-        <CountSheet open={sheet} onClose={() => setSheet(false)} title="ثبت مقدار" unit={item.unit}
-          currentValue={current}
-          onAdd={(v) => onSetLog(item.id, todayKey, current + v)}
-          onSet={(v) => onSetLog(item.id, todayKey, v)} />
+        <CountSheet open={sheetOpen} onClose={closeSheet}
+          title={editDay ? "ویرایش مقدار" : "ثبت مقدار"} unit={item.unit}
+          currentValue={targetVal} withNote initialNote={targetNote || ""}
+          allowDate today={today} initialDate={targetDay}
+          onAdd={(v, note, dk) => onSetLog(item.id, dk || targetDay, trackerValue(trackerLogs, item.id, dk || targetDay, item.type) + v, note)}
+          onSet={(v, note, dk) => onSetLog(item.id, dk || targetDay, v, note)} />
       )}
     </>
   );
@@ -997,6 +1256,7 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
   const [linkedMonthlyId, setLinkedMonthlyId] = useState(initial?.linkedMonthlyId || "");
   const [targetType, setTargetType] = useState(initial?.targetType || "simple");
   const [unit, setUnit] = useState(initial?.unit || "");
+  const [reminderTime, setReminderTime] = useState(initial?.reminderTime || "");
   const [countTarget, setCountTarget] = useState(initial?.targetType === "count" ? initial.targetValue : 10);
   const initMins = initial?.targetType === "time" ? initial.targetValue : 0;
   const [tHours, setTHours] = useState(Math.floor(initMins / 60));
@@ -1054,11 +1314,16 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
         </>
       )}
 
+      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> یادآوری روزانه (اختیاری)</label>
+      <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
+      <p className="field-hint">تا وقتی این هدف تمام نشده، هر روز در این ساعت یادآوری می‌شود.</p>
+
       <button className="primary-btn" disabled={!valid}
         onClick={() => valid && onSave({
           title: title.trim(), description: description.trim() || null, category,
           linkedMonthlyId: linkedMonthlyId || null,
           targetType, targetValue, unit: targetType === "count" ? (unit.trim() || null) : null,
+          reminderTime: reminderTime || null,
         })}>
         ذخیره
       </button>
@@ -1113,6 +1378,7 @@ function HabitForm({ initial, onSave }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
+  const [reminderTime, setReminderTime] = useState(initial?.reminderTime || "");
   return (
     <div className="form">
       <label className="field-label">عنوان عادت</label>
@@ -1121,8 +1387,11 @@ function HabitForm({ initial, onSave }) {
       <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این عادت" />
       <label className="field-label">دسته‌بندی</label>
       <CategoryPicker value={category} onChange={setCategory} />
+      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> یادآوری روزانه (اختیاری)</label>
+      <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
+      <p className="field-hint">هر روز در این ساعت یادآوری می‌شود، مگر آن روز را انجام داده باشی.</p>
       <button className="primary-btn" disabled={!title.trim()}
-        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null, category })}>
+        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null, category, reminderTime: reminderTime || null })}>
         ذخیره
       </button>
     </div>
@@ -1294,7 +1563,7 @@ function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals,
       monthKey: mode === "monthly" ? mKey : null,
       weekKey: mode === "weekly" ? wKey : null,
       linkedMonthlyId: mode === "weekly" ? data.linkedMonthlyId : null,
-      completed: false, progressLog: {}, rolloverCount: 0,
+      completed: false, progressEntries: [], rolloverCount: 0, lastReminderKey: null,
     });
     setSheetOpen(false);
   }
@@ -1411,7 +1680,7 @@ function HabitsTab({ today, habits, addHabit, toggleHabit, openDetail }) {
       )}
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن عادت"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="عادت جدید">
-        <HabitForm onSave={(data) => { addHabit({ id: uid(), ...data, completions: {} }); setSheetOpen(false); }} />
+        <HabitForm onSave={(data) => { addHabit({ id: uid(), ...data, completions: {}, lastReminderKey: null }); setSheetOpen(false); }} />
       </Sheet>
     </div>
   );
@@ -1421,12 +1690,13 @@ function HabitsTab({ today, habits, addHabit, toggleHabit, openDetail }) {
    TRACKER TAB
    ========================================================================= */
 
-const TrackerItemRow = memo(function TrackerItemRow({ item, value, onToggleBool, onQuickAdd, onOpen, onOpenAmount }) {
+const TrackerItemRow = memo(function TrackerItemRow({ item, value, note, onToggleBool, onQuickAdd, onOpen, onOpenAmount }) {
   return (
     <li className="tracker-row">
       <button className="row-body" onClick={() => onOpen({ kind: "tracker", id: item.id })}>
         <span className="list-text">{item.title}</span>
-        {item.description && <span className="row-desc">{item.description}</span>}
+        {note ? <span className="row-desc row-desc-note"><FileText size={10} /> {note}</span>
+          : item.description ? <span className="row-desc">{item.description}</span> : null}
       </button>
       {item.type === "boolean" && (
         <button className={"check-circle" + (value ? " check-circle-done" : "")} onClick={() => onToggleBool(!value)} aria-label="تغییر وضعیت">
@@ -1471,15 +1741,15 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDe
         <>
           <ul className="list">
             {items.map((item) => {
-              const raw = trackerLogs[`${item.id}:${todayKey}`];
-              const value = raw === undefined ? (item.type === "boolean" ? false : 0) : raw;
+              const value = trackerValue(trackerLogs, item.id, todayKey, item.type);
+              const note = trackerNote(trackerLogs, item.id, todayKey);
               return (
                 <TrackerItemRow
-                  key={item.id} item={item} value={value}
-                  onToggleBool={(v) => onSetLog(item.id, todayKey, v)}
-                  onQuickAdd={(d) => onSetLog(item.id, todayKey, Math.max(0, value + d))}
+                  key={item.id} item={item} value={value} note={note}
+                  onToggleBool={(v) => onSetLog(item.id, todayKey, v, note)}
+                  onQuickAdd={(d) => onSetLog(item.id, todayKey, Math.max(0, value + d), note)}
                   onOpen={onOpenDetail}
-                  onOpenAmount={() => onOpenAmount(item, value)}
+                  onOpenAmount={() => onOpenAmount(item, value, note)}
                 />
               );
             })}
@@ -1490,10 +1760,10 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDe
             {items.map((item) => {
               let text;
               if (item.type === "boolean") {
-                const doneCount = last7.filter((d) => trackerLogs[`${item.id}:${dateKey(d.jy, d.jm, d.jd)}`]).length;
+                const doneCount = last7.filter((d) => trackerValue(trackerLogs, item.id, dateKey(d.jy, d.jm, d.jd), "boolean")).length;
                 text = `${toFa(doneCount)} از ${toFa(7)} روز`;
               } else {
-                const total = last7.reduce((s, d) => s + (trackerLogs[`${item.id}:${dateKey(d.jy, d.jm, d.jd)}`] || 0), 0);
+                const total = last7.reduce((s, d) => s + trackerValue(trackerLogs, item.id, dateKey(d.jy, d.jm, d.jd), item.type), 0);
                 text = item.type === "time"
                   ? `مجموع ${formatMinutes(total)}`
                   : `مجموع ${toFa(total)}${item.unit ? " " + item.unit : ""} · میانگین ${toFa(Math.round(total / 7))}`;
@@ -1527,7 +1797,7 @@ function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup,
             trackerLogs={trackerLogs} today={today}
             onSetLog={setLog} onOpenDetail={openDetail} onAddItem={setItemSheetGroupId}
             onEditGroup={setEditingGroup} onDeleteGroup={deleteGroup}
-            onOpenAmount={(item, value) => setAmountTarget({ item, value })}
+            onOpenAmount={(item, value, note) => setAmountTarget({ item, value, note })}
           />
         ))
       )}
@@ -1549,17 +1819,17 @@ function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup,
       {amountTarget && amountTarget.item.type === "time" && (
         <DurationSheet
           open={true} onClose={() => setAmountTarget(null)} title={`ثبت زمان — ${amountTarget.item.title}`}
-          currentMinutes={amountTarget.value}
-          onAdd={(mins) => setLog(amountTarget.item.id, todayKey, amountTarget.value + mins)}
-          onSet={(mins) => setLog(amountTarget.item.id, todayKey, mins)}
+          currentMinutes={amountTarget.value} withNote initialNote={amountTarget.note || ""}
+          onAdd={(mins, note) => setLog(amountTarget.item.id, todayKey, amountTarget.value + mins, note)}
+          onSet={(mins, note) => setLog(amountTarget.item.id, todayKey, mins, note)}
         />
       )}
       {amountTarget && amountTarget.item.type === "count" && (
         <CountSheet
           open={true} onClose={() => setAmountTarget(null)} title={`ثبت مقدار — ${amountTarget.item.title}`}
-          unit={amountTarget.item.unit} currentValue={amountTarget.value}
-          onAdd={(v) => setLog(amountTarget.item.id, todayKey, amountTarget.value + v)}
-          onSet={(v) => setLog(amountTarget.item.id, todayKey, v)}
+          unit={amountTarget.item.unit} currentValue={amountTarget.value} withNote initialNote={amountTarget.note || ""}
+          onAdd={(v, note) => setLog(amountTarget.item.id, todayKey, amountTarget.value + v, note)}
+          onSet={(v, note) => setLog(amountTarget.item.id, todayKey, v, note)}
         />
       )}
     </div>
@@ -1818,6 +2088,11 @@ const APP_CSS = `
   .dp-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .dp-label { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); }
   .dp-select { font-size: 20px; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); text-align: center; }
+  .dp-hours { display: flex; align-items: center; gap: 5px; }
+  .dp-hours button { width: 30px; height: 30px; border-radius: 9px; border: 1.5px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); padding: 0; flex-shrink: 0; }
+  .dp-num { width: 78px; font-size: 20px; font-weight: 800; padding: 8px 4px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); text-align: center; }
+  .dp-num::-webkit-outer-spin-button, .dp-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .dp-num { -moz-appearance: textfield; }
   .dp-sep { font-size: 22px; font-weight: 800; color: var(--c-ink-faint); padding-bottom: 10px; }
   .dp-current { font-size: 12.5px; color: var(--c-ink-soft); margin: 0 0 10px; }
 
@@ -1837,9 +2112,15 @@ const APP_CSS = `
   .detail-done-note { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-success); font-weight: 700; margin: 8px 0 0; }
   .detail-log-title { display: block; margin: 16px 0 6px; }
   .log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-  .log-row { display: flex; align-items: center; gap: 8px; font-size: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 9px; padding: 7px 10px; }
-  .log-row span:first-child { flex: 1; }
-  .log-val { font-weight: 700; color: var(--c-primary); }
+  .log-row { display: flex; flex-direction: column; font-size: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 9px; padding: 7px 10px; }
+  .log-row-open { border-color: var(--c-primary); }
+  .log-row-top { display: flex; align-items: center; gap: 8px; }
+  .log-row-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 0; font-family: inherit; font-size: 12px; color: inherit; text-align: start; }
+  .log-row-static { cursor: default; }
+  .log-date { white-space: nowrap; flex-shrink: 0; }
+  .log-note-preview { color: var(--c-ink-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .log-note-full { margin: 8px 0 2px; padding-top: 8px; border-top: 1px dashed var(--c-border); font-size: 12px; line-height: 1.75; white-space: pre-wrap; color: var(--c-ink); }
+  .log-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
   .toggle-big-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13.5px; font-weight: 700; color: var(--c-ink); display: flex; align-items: center; justify-content: center; gap: 6px; }
   .toggle-big-done { background: var(--c-success-soft); border-color: #BEDCD3; color: var(--c-success); }
   .heatmap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-bottom: 4px; }
@@ -1892,6 +2173,24 @@ const APP_CSS = `
   .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
 
+  .field-hint { font-size: 10.5px; color: var(--c-ink-faint); margin: 6px 0 0; line-height: 1.6; }
+
+  .day-picker { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; -webkit-overflow-scrolling: touch; }
+  .dpk-chip { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 9px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); min-width: 46px; }
+  .dpk-wd { font-size: 9px; color: var(--c-ink-faint); }
+  .dpk-num { font-size: 14px; font-weight: 800; }
+  .dpk-mo { font-size: 9px; color: var(--c-ink-faint); }
+  .dpk-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
+  .dpk-chip-active .dpk-wd, .dpk-chip-active .dpk-mo { color: rgba(255,255,255,0.8); }
+  .dpk-chip-active .dpk-num { color: #fff; }
+
+  .log-row-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--c-border); }
+  .mini-btn { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-bg); font-size: 11.5px; font-weight: 700; color: var(--c-ink); }
+  .mini-btn-danger { background: var(--c-danger-soft); border-color: #E7C7BE; color: var(--c-danger); }
+  .row-desc-note { display: flex; align-items: center; gap: 3px; color: var(--c-ink-soft); }
+  .search-group { margin-bottom: 6px; }
+  .search-empty { font-size: 12.5px; color: var(--c-ink-faint); text-align: center; padding: 18px 0 4px; margin: 0; }
+
   @media (prefers-reduced-motion: reduce) { .app-root * { transition: none !important; } }
 `;
 /* =========================================================================
@@ -1912,6 +2211,7 @@ function PlanningApp() {
   const [trackerLogs, setTrackerLogs] = useState({});
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const [detail, setDetail] = useState(null);   // { kind, id }
   const [editing, setEditing] = useState(null); // { kind, item }
   const [toast, setToast] = useState(null);
@@ -1925,7 +2225,7 @@ function PlanningApp() {
 
   useEffect(() => {
     const d = loadAll();
-    if (d.goals) setGoals(d.goals);
+    if (d.goals) setGoals(d.goals.map(migrateGoal));
     if (d.tasks) setTasks(d.tasks);
     if (d.habits) setHabits(d.habits);
     if (d.notes) setNotes(d.notes);
@@ -1933,7 +2233,7 @@ function PlanningApp() {
     if (d.categories) setCategories(d.categories);
     if (d.trackerGroups) setTrackerGroups(d.trackerGroups);
     if (d.trackerItems) setTrackerItems(d.trackerItems);
-    if (d.trackerLogs) setTrackerLogs(d.trackerLogs);
+    if (d.trackerLogs) setTrackerLogs(migrateTrackerLogs(d.trackerLogs));
     if (d.settings) setSettings({ ...DEFAULT_SETTINGS, ...d.settings });
     setLoaded(true);
   }, []);
@@ -1942,7 +2242,10 @@ function PlanningApp() {
   const closeDetail = useCallback(() => setDetail(null), []);
 
   /* ---- goals ---- */
-  const addGoal = useCallback((goal) => setGoals((prev) => { const next = [...prev, goal]; persist("goals", next); return next; }), []);
+  const addGoal = useCallback((goal) => {
+    if (goal.reminderTime) requestNotifyPermission();
+    setGoals((prev) => { const next = [...prev, goal]; persist("goals", next); return next; });
+  }, []);
   const toggleGoal = useCallback((id) => setGoals((prev) => {
     const next = prev.map((g) => g.id === id ? { ...g, completed: !g.completed } : g);
     persist("goals", next); return next;
@@ -1951,6 +2254,10 @@ function PlanningApp() {
     const next = prev.map((g) => {
       if (g.id !== id) return g;
       const merged = { ...g, ...data };
+      if (data.reminderTime !== undefined && data.reminderTime !== g.reminderTime) {
+        merged.lastReminderKey = null;
+        if (data.reminderTime) requestNotifyPermission();
+      }
       // A goal that stops being measurable loses its auto-completion rule.
       if (isMeasurable(merged)) merged.completed = goalProgress(merged) >= merged.targetValue;
       return merged;
@@ -1958,24 +2265,31 @@ function PlanningApp() {
     persist("goals", next); return next;
   }), []);
   const deleteGoal = useCallback((id) => setGoals((prev) => { const next = prev.filter((g) => g.id !== id); persist("goals", next); return next; }), []);
-  const logGoalProgress = useCallback((id, dk, delta) => setGoals((prev) => {
+  const logGoalProgress = useCallback((id, dk, delta, note) => setGoals((prev) => {
     const next = prev.map((g) => {
       if (g.id !== id) return g;
-      const progressLog = { ...(g.progressLog || {}) };
-      progressLog[dk] = (progressLog[dk] || 0) + delta;
-      if (progressLog[dk] <= 0) delete progressLog[dk];
-      const merged = { ...g, progressLog };
+      const progressEntries = [...(g.progressEntries || []), { id: uid(), dateKey: dk, value: delta, note: note || null }];
+      const merged = { ...g, progressEntries };
       merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
       return merged;
     });
     persist("goals", next); return next;
   }), []);
-  const clearGoalLogEntry = useCallback((id, dk) => setGoals((prev) => {
+  const clearGoalLogEntry = useCallback((id, entryId) => setGoals((prev) => {
     const next = prev.map((g) => {
       if (g.id !== id) return g;
-      const progressLog = { ...(g.progressLog || {}) };
-      delete progressLog[dk];
-      const merged = { ...g, progressLog };
+      const progressEntries = (g.progressEntries || []).filter((e) => e.id !== entryId);
+      const merged = { ...g, progressEntries };
+      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
+      return merged;
+    });
+    persist("goals", next); return next;
+  }), []);
+  const updateGoalEntry = useCallback((id, entryId, patch) => setGoals((prev) => {
+    const next = prev.map((g) => {
+      if (g.id !== id) return g;
+      const progressEntries = (g.progressEntries || []).map((e) => e.id === entryId ? { ...e, ...patch, note: patch.note || null } : e);
+      const merged = { ...g, progressEntries };
       merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
       return merged;
     });
@@ -1995,7 +2309,10 @@ function PlanningApp() {
   const deleteTask = useCallback((id) => setTasks((prev) => { const next = prev.filter((t) => t.id !== id); persist("tasks", next); return next; }), []);
 
   /* ---- habits ---- */
-  const addHabit = useCallback((habit) => setHabits((prev) => { const next = [...prev, habit]; persist("habits", next); return next; }), []);
+  const addHabit = useCallback((habit) => {
+    if (habit.reminderTime) requestNotifyPermission();
+    setHabits((prev) => { const next = [...prev, habit]; persist("habits", next); return next; });
+  }, []);
   const toggleHabit = useCallback((id, dk) => setHabits((prev) => {
     const next = prev.map((h) => {
       if (h.id !== id) return h;
@@ -2005,7 +2322,14 @@ function PlanningApp() {
     });
     persist("habits", next); return next;
   }), []);
-  const updateHabit = useCallback((id, data) => setHabits((prev) => { const next = prev.map((h) => h.id === id ? { ...h, ...data } : h); persist("habits", next); return next; }), []);
+  const updateHabit = useCallback((id, data) => setHabits((prev) => {
+    const next = prev.map((h) => {
+      if (h.id !== id) return h;
+      if (data.reminderTime) requestNotifyPermission();
+      return { ...h, ...data, lastReminderKey: data.reminderTime !== h.reminderTime ? null : h.lastReminderKey };
+    });
+    persist("habits", next); return next;
+  }), []);
   const deleteHabit = useCallback((id) => setHabits((prev) => { const next = prev.filter((h) => h.id !== id); persist("habits", next); return next; }), []);
 
   /* ---- notes / reviews ---- */
@@ -2039,8 +2363,16 @@ function PlanningApp() {
   const addTrackerItem = useCallback((item) => setTrackerItems((prev) => { const next = [...prev, item]; persist("trackerItems", next); return next; }), []);
   const updateTrackerItem = useCallback((id, data) => setTrackerItems((prev) => { const next = prev.map((it) => it.id === id ? { ...it, ...data } : it); persist("trackerItems", next); return next; }), []);
   const deleteTrackerItem = useCallback((id) => setTrackerItems((prev) => { const next = prev.filter((it) => it.id !== id); persist("trackerItems", next); return next; }), []);
-  const setTrackerLog = useCallback((itemId, dk, value) => {
-    setTrackerLogs((prev) => { const next = { ...prev, [`${itemId}:${dk}`]: value }; persist("trackerLogs", next); return next; });
+  const setTrackerLog = useCallback((itemId, dk, value, note) => {
+    setTrackerLogs((prev) => {
+      const next = { ...prev };
+      const key = `${itemId}:${dk}`;
+      const emptyValue = value === false || value === 0 || value === undefined || value === null;
+      if (emptyValue && !note) delete next[key];
+      else next[key] = { value, note: note || null };
+      persist("trackerLogs", next);
+      return next;
+    });
   }, []);
 
   /* ---- rollover ---- */
@@ -2079,29 +2411,59 @@ function PlanningApp() {
     if (findOverdueGoals(goals, curMonthKey, curWeekKey).length) rolloverGoals();
   }, [loaded, settings.autoRollover]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---- reminder polling ---- */
+  /* ---- reminder polling ----
+     Reads current data from a ref and performs the notification side effects
+     outside the state updaters, so updating state never triggers a beep twice
+     under React's double-invoked updaters. */
+  const dataRef = useRef({ tasks, habits, goals });
+  useEffect(() => { dataRef.current = { tasks, habits, goals }; }, [tasks, habits, goals]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       const now = new Date();
       const nowKey = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
-      setTasks((prev) => {
-        let changed = false;
-        const next = prev.map((t) => {
-          if (t.dateKey === todayKey && t.reminderTime && !t.completed && !t.reminderFired && t.reminderTime <= nowKey) {
-            changed = true;
-            playBeep();
-            fireBrowserNotification("یادآوری: " + t.title, "زمان انجام این کار رسیده");
-            setToast({ id: t.id, title: t.title });
-            return { ...t, reminderFired: true };
-          }
-          return t;
-        });
-        if (changed) persist("tasks", next);
-        return changed ? next : prev;
+      const cur = dataRef.current;
+
+      const dueTasks = cur.tasks.filter((t) =>
+        t.dateKey === todayKey && t.reminderTime && !t.completed && !t.reminderFired && t.reminderTime <= nowKey);
+      const dueHabits = cur.habits.filter((h) =>
+        h.reminderTime && !h.completions[todayKey] && h.lastReminderKey !== todayKey && h.reminderTime <= nowKey);
+      const dueGoals = cur.goals.filter((g) => {
+        if (!g.reminderTime || g.completed || g.lastReminderKey === todayKey || g.reminderTime > nowKey) return false;
+        // Only nag about goals whose period is the one we're actually in.
+        if (g.type === "monthly") return g.monthKey === curMonthKey;
+        if (g.type === "weekly") return g.weekKey === curWeekKey;
+        return false;
       });
+
+      if (!dueTasks.length && !dueHabits.length && !dueGoals.length) return;
+
+      if (dueTasks.length) {
+        const ids = new Set(dueTasks.map((t) => t.id));
+        setTasks((prev) => { const next = prev.map((t) => ids.has(t.id) ? { ...t, reminderFired: true } : t); persist("tasks", next); return next; });
+      }
+      if (dueHabits.length) {
+        const ids = new Set(dueHabits.map((h) => h.id));
+        setHabits((prev) => { const next = prev.map((h) => ids.has(h.id) ? { ...h, lastReminderKey: todayKey } : h); persist("habits", next); return next; });
+      }
+      if (dueGoals.length) {
+        const ids = new Set(dueGoals.map((g) => g.id));
+        setGoals((prev) => { const next = prev.map((g) => ids.has(g.id) ? { ...g, lastReminderKey: todayKey } : g); persist("goals", next); return next; });
+      }
+
+      const all = [
+        ...dueTasks.map((t) => ({ title: t.title, kind: "کار" })),
+        ...dueHabits.map((h) => ({ title: h.title, kind: "عادت" })),
+        ...dueGoals.map((g) => ({ title: g.title, kind: "هدف" })),
+      ];
+      playBeep();
+      for (const item of all) fireBrowserNotification(`یادآوری ${item.kind}: ${item.title}`, "زمان انجامش رسیده");
+      setToast(all.length === 1
+        ? { title: all[0].title }
+        : { title: `${toFa(all.length)} مورد (${all.map((a) => a.title).join("، ")})` });
     }, 20000);
     return () => clearInterval(interval);
-  }, [todayKey]);
+  }, [todayKey, curMonthKey, curWeekKey]);
 
   const allActiveGoals = useMemo(() => goals.filter((g) => !g.completed), [goals]);
 
@@ -2151,6 +2513,7 @@ function PlanningApp() {
             <span className="app-wordmark">گاه‌نما</span>
             <div className="header-right-group">
               <span className="app-header-date">{PERSIAN_WEEKDAYS[persianWeekdayIndex(today.jy, today.jm, today.jd)]}، {toFa(today.jd)} {PERSIAN_MONTHS[today.jm - 1]} {toFa(today.jy)}</span>
+              <IconBtn onClick={() => setSearchOpen(true)} label="جست‌وجو"><Search size={16} /></IconBtn>
               <IconBtn onClick={() => setSettingsOpen(true)} label="تنظیمات"><Settings size={16} /></IconBtn>
             </div>
           </div>
@@ -2192,6 +2555,9 @@ function PlanningApp() {
 
         <BottomNav tab={tab} setTab={setTab} />
 
+        <SearchSheet open={searchOpen} onClose={() => setSearchOpen(false)}
+          goals={goals} tasks={tasks} habits={habits} trackerItems={trackerItems} onOpenDetail={openDetail} />
+
         <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)}
           categories={categories} addCategory={addCategory} deleteCategory={deleteCategory}
           settings={settings} updateSettings={updateSettings} />
@@ -2203,7 +2569,7 @@ function PlanningApp() {
               {detail.kind === "goal" && (
                 <GoalDetail goal={detailItem} goals={goals} today={today}
                   onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleGoal}
-                  onLogProgress={logGoalProgress} onClearLogEntry={clearGoalLogEntry} />
+                  onLogProgress={logGoalProgress} onUpdateEntry={updateGoalEntry} onClearLogEntry={clearGoalLogEntry} />
               )}
               {detail.kind === "task" && (
                 <TaskDetail task={detailItem} goals={goals} onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleTask} />
