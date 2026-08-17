@@ -13,10 +13,20 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="گاه‌نما">
 <meta name="mobile-web-app-capable" content="yes">
+
+<!-- The font MUST be linked here. An @import placed after other rules inside
+     a <style> block is ignored by the CSS parser, which is why earlier
+     versions silently fell back to Tahoma. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap">
+
 <style>
-  html, body { margin: 0; padding: 0; background: #F7F7F5; -webkit-tap-highlight-color: transparent; }
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; padding: 0; background: #F6F5F2; -webkit-tap-highlight-color: transparent; }
+  @media (prefers-color-scheme: dark) { html, body { background: #131519; } }
   #root { min-height: 100vh; }
-  #boot-fallback { font-family: Tahoma, sans-serif; direction: rtl; text-align: center; padding: 40px 20px; color: #6B6D76; }
+  #boot-fallback { font-family: Vazirmatn, Tahoma, sans-serif; direction: rtl; text-align: center; padding: 40px 20px; color: #62656E; }
 </style>
 </head>
 <body>
@@ -61,6 +71,10 @@ const Settings = (p) => <Icon {...p}><line x1="4" y1="7" x2="20" y2="7" /><circl
 const Clock = (p) => <Icon {...p}><circle cx="12" cy="12" r="8.5" /><polyline points="12 7.5 12 12 15.5 14" /></Icon>;
 const ChevronDown = (p) => <Icon {...p}><polyline points="6 9 12 15 18 9" /></Icon>;
 const Search = (p) => <Icon {...p}><circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" /></Icon>;
+const Archive = (p) => <Icon {...p}><rect x="3" y="4" width="18" height="4.5" rx="1.5" /><path d="M5 8.5V19a1.5 1.5 0 0 0 1.5 1.5h11A1.5 1.5 0 0 0 19 19V8.5" /><line x1="10" y1="13" x2="14" y2="13" /></Icon>;
+const RotateBack = (p) => <Icon {...p}><path d="M4 12a8 8 0 1 0 2.3-5.6" /><polyline points="4 4 4 9 9 9" /></Icon>;
+const Moon = (p) => <Icon {...p}><path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" /></Icon>;
+const ArrowUpRight = (p) => <Icon {...p}><line x1="7" y1="17" x2="17" y2="7" /><polyline points="9 7 17 7 17 15" /></Icon>;
 const FileText = (p) => <Icon {...p}><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5z" /><polyline points="14 3 14 8 19 8" /><line x1="9" y1="13" x2="15" y2="13" /><line x1="9" y1="17" x2="13" y2="17" /></Icon>;
 const LayoutGrid = (p) => <Icon {...p}><rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" /></Icon>;
 const Pencil = (p) => <Icon {...p}><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4 11.5-11.5z" /></Icon>;
@@ -285,10 +299,30 @@ const TRACKER_TYPES = [
 
 function uid() { return `id_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`; }
 
+const Sun = (p) => <Icon {...p}><circle cx="12" cy="12" r="4.2" /><line x1="12" y1="2.5" x2="12" y2="5" /><line x1="12" y1="19" x2="12" y2="21.5" /><line x1="2.5" y1="12" x2="5" y2="12" /><line x1="19" y1="12" x2="21.5" y2="12" /><line x1="5.6" y1="5.6" x2="7.3" y2="7.3" /><line x1="16.7" y1="16.7" x2="18.4" y2="18.4" /><line x1="5.6" y1="18.4" x2="7.3" y2="16.7" /><line x1="16.7" y1="7.3" x2="18.4" y2="5.6" /></Icon>;
+const CalendarIcon = (p) => <Icon {...p}><rect x="3" y="5" width="18" height="16" rx="2.5" /><line x1="3" y1="10" x2="21" y2="10" /><line x1="8" y1="3" x2="8" y2="7" /><line x1="16" y1="3" x2="16" y2="7" /></Icon>;
+
+const GROUP_PERIODS = [
+  { id: "daily", label: "روزانه" },
+  { id: "monthly", label: "ماهانه" },
+];
+const HABIT_METRICS = [
+  { id: "simple", label: "ساده" },
+  { id: "count", label: "تعدادی" },
+  { id: "time", label: "زمانی" },
+];
+const THEME_MODES = [
+  { id: "auto", label: "خودکار" },
+  { id: "light", label: "روشن" },
+  { id: "dark", label: "تیره" },
+];
+
 /* =========================================================================
    STORAGE
    ========================================================================= */
-const STORAGE_KEYS = ["goals", "tasks", "habits", "notes", "reviews", "categories", "trackerGroups", "trackerItems", "trackerLogs", "settings"];
+
+const STORAGE_KEYS = ["goals", "tasks", "habits", "notes", "reviews", "categories",
+  "trackerGroups", "trackerItems", "trackerLogs", "trackerEntries", "settings"];
 
 const LS_PREFIX = "gahnama:";
 function loadAll() {
@@ -308,20 +342,20 @@ function persist(key, value) {
   catch (e) { console.error("storage error", key, e); }
 }
 
-const DEFAULT_SETTINGS = { autoRollover: false };
+const DEFAULT_SETTINGS = { autoRollover: false, theme: "auto" };
+const MAX_HOURS = 2000;
 
 /* =========================================================================
-   GOAL PROGRESS HELPERS
-   A goal can be "simple" (manual checkbox) or measurable by count or time.
-   Measurable goals accumulate entries in progressEntries — each entry is a
-   dated amount with an optional note — and complete themselves once the
-   running total reaches the target.
+   GOALS
+   A goal is "simple" (manual checkbox) or measurable by count or time.
+   Measurable goals hold dated entries, each with an optional note.
 
-   Earlier versions stored progress as a { dateKey: amount } map. migrateGoal
-   converts that shape on load so existing data keeps its progress.
+   A weekly goal linked to a monthly goal FEEDS it: the monthly total is its
+   own entries plus every linked weekly entry. The total is derived rather
+   than copied, so editing or deleting a weekly entry updates the monthly
+   goal automatically and the two can never drift apart. Only same-unit
+   links contribute — pouring "pages" into an "hours" goal would be wrong.
    ========================================================================= */
-
-const MAX_HOURS = 2000;
 
 function isMeasurable(goal) { return goal.targetType === "count" || goal.targetType === "time"; }
 
@@ -339,63 +373,182 @@ function migrateGoal(g) {
   return out;
 }
 
-function goalProgress(goal) {
+function goalOwnProgress(goal) {
   const entries = goal.progressEntries;
   if (!Array.isArray(entries)) return 0;
   let sum = 0;
   for (const e of entries) sum += e.value || 0;
   return sum;
 }
-
-/* Tracker daily logs are keyed "itemId:dateKey". Earlier versions stored a
-   bare value; they now store { value, note }. These readers accept both, so
-   old and new records coexist safely. */
-function trackerRaw(logs, itemId, dk) { return logs[`${itemId}:${dk}`]; }
-function trackerValue(logs, itemId, dk, type) {
-  const raw = trackerRaw(logs, itemId, dk);
-  if (raw === undefined || raw === null) return type === "boolean" ? false : 0;
-  if (typeof raw === "object") return raw.value;
-  return raw;
-}
-function trackerNote(logs, itemId, dk) {
-  const raw = trackerRaw(logs, itemId, dk);
-  return (raw && typeof raw === "object" && raw.note) ? raw.note : null;
-}
-function trackerHasEntry(logs, itemId, dk) {
-  const raw = trackerRaw(logs, itemId, dk);
-  if (raw === undefined || raw === null) return false;
-  const v = typeof raw === "object" ? raw.value : raw;
-  return !(v === false || v === 0 || v === undefined || v === null);
-}
-function migrateTrackerLogs(logs) {
-  if (!logs || typeof logs !== "object") return {};
-  const out = {};
-  for (const k in logs) {
-    const raw = logs[k];
-    out[k] = (raw && typeof raw === "object") ? raw : { value: raw, note: null };
+function linkedEntriesFor(goal, goals) {
+  if (!goal || goal.type !== "monthly" || !isMeasurable(goal)) return [];
+  const out = [];
+  for (const g of goals) {
+    if (g.id === goal.id || g.linkedMonthlyId !== goal.id) continue;
+    if (g.targetType !== goal.targetType) continue; // different unit — don't mix
+    for (const e of (g.progressEntries || [])) out.push({ ...e, sourceId: g.id, sourceTitle: g.title });
   }
   return out;
 }
-function goalProgressText(goal) {
-  const p = goalProgress(goal);
-  const t = goal.targetValue || 0;
-  if (goal.targetType === "time") return `${formatMinutes(p)} از ${formatMinutes(t)}`;
-  return `${toFa(p)} از ${toFa(t)}${goal.unit ? " " + goal.unit : ""}`;
+function goalTotal(goal, goals) {
+  let sum = goalOwnProgress(goal);
+  for (const e of linkedEntriesFor(goal, goals)) sum += e.value || 0;
+  return sum;
 }
-function goalProgressPct(goal) {
+function progressTextFor(goal, total) {
+  const t = goal.targetValue || 0;
+  if (goal.targetType === "time") return `${formatMinutes(total)} از ${formatMinutes(t)}`;
+  return `${toFa(total)} از ${toFa(t)}${goal.unit ? " " + goal.unit : ""}`;
+}
+function progressPctFor(goal, total) {
   const t = goal.targetValue || 0;
   if (!t) return 0;
-  return Math.min(100, (goalProgress(goal) / t) * 100);
+  return Math.min(100, (total / t) * 100);
 }
 function formatAmount(type, value, unit) {
   if (type === "time") return formatMinutes(value);
   return `${toFa(value)}${unit ? " " + unit : ""}`;
 }
+/* Re-derives completion for every measurable goal. Run after ANY change to
+   the goals array, because one weekly edit can complete a monthly parent. */
+function recomputeGoals(goals) {
+  return goals.map((g) => isMeasurable(g)
+    ? { ...g, completed: goalTotal(g, goals) >= (g.targetValue || Infinity) }
+    : g);
+}
 
 /* =========================================================================
-   ROLLOVER — carrying unfinished items forward. Tasks roll day-to-day,
-   weekly goals week-to-week, monthly goals month-to-month. String keys are
-   zero-padded, so plain "<" comparison is a valid chronological test.
+   HABITS
+   A habit is either simple (done / not done) or measured by count or time
+   with optional daily minimum and maximum. It can also carry a weekly
+   target expressed in successful days.
+
+   Note the asymmetry: for a limit-style habit (max only), a day with no
+   record counts as zero and therefore as a success — not logging cigarettes
+   means you smoked none. For a minimum, no record means you fell short.
+   ========================================================================= */
+
+function migrateHabit(h) {
+  if (h.entries && !h.completions) return h;
+  const entries = { ...(h.entries || {}) };
+  if (h.completions) for (const k in h.completions) if (h.completions[k]) entries[k] = entries[k] === undefined ? true : entries[k];
+  const out = {
+    metric: "simple", unit: null, dailyMin: null, dailyMax: null, weeklyMin: null, weeklyMax: null,
+    ...h, entries,
+  };
+  delete out.completions;
+  return out;
+}
+function habitMeasured(habit) { return habit.metric === "count" || habit.metric === "time"; }
+function habitDayValue(habit, dk) {
+  const v = (habit.entries || {})[dk];
+  if (v === undefined || v === null) return habitMeasured(habit) ? 0 : false;
+  return v;
+}
+function habitDaySuccess(habit, dk) {
+  const raw = (habit.entries || {})[dk];
+  if (!habitMeasured(habit)) return !!raw;
+  const v = (raw === undefined || raw === null) ? 0 : raw;
+  const hasMin = habit.dailyMin !== null && habit.dailyMin !== undefined;
+  const hasMax = habit.dailyMax !== null && habit.dailyMax !== undefined;
+  if (!hasMin && !hasMax) return v > 0;
+  if (hasMin && v < habit.dailyMin) return false;
+  if (hasMax && v > habit.dailyMax) return false;
+  return true;
+}
+function habitStreak(habit, today) {
+  let streak = 0;
+  let cur = today;
+  // Today counts only once it already qualifies, so an unfinished day
+  // doesn't look like a broken streak first thing in the morning.
+  while (habitDaySuccess(habit, dateKey(cur.jy, cur.jm, cur.jd))) {
+    streak += 1;
+    cur = addDaysJalali(cur.jy, cur.jm, cur.jd, -1);
+  }
+  return streak;
+}
+function habitWeekDays(habit, today) {
+  const ws = getWeekStart(today.jy, today.jm, today.jd);
+  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  let days = 0, elapsed = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = addDaysJalali(ws.jy, ws.jm, ws.jd, i);
+    const dk = dateKey(d.jy, d.jm, d.jd);
+    if (dk > todayKey) break; // don't credit days that haven't happened
+    elapsed += 1;
+    if (habitDaySuccess(habit, dk)) days += 1;
+  }
+  return { days, elapsed };
+}
+function habitTargetText(habit) {
+  const parts = [];
+  const unit = habit.metric === "time" ? null : habit.unit;
+  const fmt = (v) => habit.metric === "time" ? formatMinutes(v) : `${toFa(v)}${unit ? " " + unit : ""}`;
+  if (habit.dailyMin != null && habit.dailyMax != null) parts.push(`روزانه بین ${fmt(habit.dailyMin)} و ${fmt(habit.dailyMax)}`);
+  else if (habit.dailyMin != null) parts.push(`روزانه حداقل ${fmt(habit.dailyMin)}`);
+  else if (habit.dailyMax != null) parts.push(`روزانه حداکثر ${fmt(habit.dailyMax)}`);
+  if (habit.weeklyMin != null && habit.weeklyMax != null) parts.push(`هفته‌ای بین ${toFa(habit.weeklyMin)} و ${toFa(habit.weeklyMax)} روز`);
+  else if (habit.weeklyMin != null) parts.push(`هفته‌ای حداقل ${toFa(habit.weeklyMin)} روز`);
+  else if (habit.weeklyMax != null) parts.push(`هفته‌ای حداکثر ${toFa(habit.weeklyMax)} روز`);
+  return parts.join(" · ");
+}
+
+/* =========================================================================
+   TRACKER
+   Groups are recorded either per day or per month; the group's period
+   decides the key format ("1405-05-13" vs "1405-05"). Each record is its
+   own entry, so several can share a period and each keeps its own note.
+   Items and groups can be archived: hidden from the list, data preserved.
+   ========================================================================= */
+
+function migrateTrackerEntries(existing, oldLogs) {
+  if (Array.isArray(existing)) return existing;
+  const out = [];
+  for (const k in (oldLogs || {})) {
+    const i = k.indexOf(":");
+    if (i < 0) continue;
+    const itemId = k.slice(0, i);
+    const periodKey = k.slice(i + 1);
+    const raw = oldLogs[k];
+    const value = (raw && typeof raw === "object") ? raw.value : raw;
+    const note = (raw && typeof raw === "object") ? (raw.note || null) : null;
+    const empty = value === false || value === 0 || value === undefined || value === null;
+    if (empty && !note) continue;
+    out.push({ id: `mig_${itemId}_${periodKey}`, itemId, periodKey, value, note });
+  }
+  return out;
+}
+function entriesForPeriod(entries, itemId, periodKey) {
+  return entries.filter((e) => e.itemId === itemId && e.periodKey === periodKey);
+}
+function periodTotal(entries, item, periodKey) {
+  const list = entriesForPeriod(entries, itemId_(item), periodKey);
+  if (item.type === "boolean") return list.some((e) => e.value === true);
+  let s = 0;
+  for (const e of list) s += e.value || 0;
+  return s;
+}
+function itemId_(item) { return typeof item === "string" ? item : item.id; }
+function periodHasEntry(entries, item, periodKey) {
+  const list = entriesForPeriod(entries, itemId_(item), periodKey);
+  if (!list.length) return false;
+  if (item.type === "boolean") return list.some((e) => e.value === true);
+  return list.some((e) => (e.value || 0) !== 0 || e.note);
+}
+function groupPeriodKey(group, cursor) {
+  return group.period === "monthly"
+    ? monthKey(cursor.jy, cursor.jm)
+    : dateKey(cursor.jy, cursor.jm, cursor.jd);
+}
+function formatPeriodKey(periodKey) {
+  const parts = periodKey.split("-");
+  if (parts.length === 2) return `${PERSIAN_MONTHS[Number(parts[1]) - 1]} ${toFa(Number(parts[0]))}`;
+  return `${toFa(Number(parts[2]))} ${PERSIAN_MONTHS[Number(parts[1]) - 1]}`;
+}
+
+/* =========================================================================
+   ROLLOVER — carrying unfinished items forward. Zero-padded keys make plain
+   "<" a valid chronological test.
    ========================================================================= */
 
 function findOverdueTasks(tasks, todayKey) {
@@ -411,15 +564,14 @@ function findOverdueGoals(goals, curMonthKey, curWeekKey) {
 }
 
 /* =========================================================================
-   REMINDER HELPERS — best-effort browser notification + audible beep +
-   in-app toast. Running in a browser tab, these fire while the app is open.
+   REMINDERS — best-effort while the app is open.
    ========================================================================= */
 
 function requestNotifyPermission() {
   try {
     if (typeof Notification === "undefined") return;
     if (Notification.permission === "default") Notification.requestPermission().catch(() => {});
-  } catch (e) { /* not available */ }
+  } catch (e) { /* unavailable */ }
 }
 function fireBrowserNotification(title, body) {
   try {
@@ -434,8 +586,7 @@ function playBeep() {
     const ctx = new Ctx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
-    osc.connect(gain);
-    gain.connect(ctx.destination);
+    osc.connect(gain); gain.connect(ctx.destination);
     osc.frequency.value = 880;
     gain.gain.setValueAtTime(0.16, ctx.currentTime);
     osc.start();
@@ -443,9 +594,8 @@ function playBeep() {
     osc.stop(ctx.currentTime + 0.6);
   } catch (e) { /* ignore */ }
 }
-
 /* =========================================================================
-   SMALL UI PRIMITIVES
+   UI PRIMITIVES
    ========================================================================= */
 
 function IconBtn({ onClick, children, label, variant = "ghost" }) {
@@ -456,7 +606,7 @@ function IconBtn({ onClick, children, label, variant = "ghost" }) {
   );
 }
 
-function ProgressBar({ value, color = "var(--c-primary)", track = "var(--c-border-soft)" }) {
+function ProgressBar({ value, color = "var(--c-primary)", track = "var(--c-track)" }) {
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div className="progress-track" style={{ background: track }}>
@@ -465,17 +615,29 @@ function ProgressBar({ value, color = "var(--c-primary)", track = "var(--c-borde
   );
 }
 
-const CategoryChip = memo(function CategoryChip({ id, size = "sm" }) {
-  const categories = useContext(CategoriesContext);
+function catPalette(categories, id) {
   const cat = categoryOf(categories, id);
-  const palette = COLOR_PALETTE[cat.colorKey] || COLOR_PALETTE.slate;
+  return { cat, palette: COLOR_PALETTE[cat.colorKey] || COLOR_PALETTE.slate };
+}
+
+const CategoryChip = memo(function CategoryChip({ id }) {
+  const categories = useContext(CategoriesContext);
+  const { cat, palette } = catPalette(categories, id);
   return (
-    <span className={"chip" + (size === "sm" ? " chip-sm" : "")} style={{ background: palette.soft, color: palette.hex }}>
+    <span className="chip" style={{ background: palette.soft, color: palette.hex }}>
       <span className="chip-dot" style={{ background: palette.hex }} />
       {cat.label}
     </span>
   );
 });
+
+/* A thin colour bar on the leading edge of a row. Lets a long list be
+   scanned by category without reading a single label. */
+function CategoryEdge({ id }) {
+  const categories = useContext(CategoriesContext);
+  const { palette } = catPalette(categories, id);
+  return <span className="cat-edge" style={{ background: palette.hex }} />;
+}
 
 function EmptyState({ text, sub }) {
   return (
@@ -491,6 +653,7 @@ function Sheet({ open, onClose, title, children }) {
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet" onClick={(e) => e.stopPropagation()}>
+        <div className="sheet-grab" />
         <div className="sheet-head">
           <span className="sheet-title">{title}</span>
           <IconBtn onClick={onClose} label="بستن"><X size={18} /></IconBtn>
@@ -509,14 +672,12 @@ function CategoryPicker({ value, onChange }) {
         const palette = COLOR_PALETTE[c.colorKey] || COLOR_PALETTE.slate;
         const active = value === c.id;
         return (
-          <button
-            key={c.id} type="button" onClick={() => onChange(c.id)} className="cat-picker-btn"
+          <button key={c.id} type="button" onClick={() => onChange(c.id)} className="cat-picker-btn"
             style={{
               background: active ? palette.soft : "var(--c-surface)",
               borderColor: active ? palette.hex : "var(--c-border)",
               color: active ? palette.hex : "var(--c-ink-soft)",
-            }}
-          >
+            }}>
             <span className="chip-dot" style={{ background: palette.hex }} />
             {c.label}
           </button>
@@ -526,25 +687,28 @@ function CategoryPicker({ value, onChange }) {
   );
 }
 
-/* =========================================================================
-   DURATION PICKER — hours + minutes wheels for every time-based entry.
-   ========================================================================= */
+function Segmented({ options, value, onChange }) {
+  return (
+    <div className="segmented">
+      {options.map((o) => (
+        <button key={o.id} type="button" className={value === o.id ? "seg-active" : ""} onClick={() => onChange(o.id)}>{o.label}</button>
+      ))}
+    </div>
+  );
+}
 
+/* Hours is a typed field, not a wheel: the range runs to 2000. */
 function DurationPicker({ hours, minutes, setHours, setMinutes }) {
-  // Hours is a typed field rather than a dropdown: the range runs to 2000,
-  // which is far past the point where scrolling a list stops being usable.
   return (
     <div className="duration-picker">
       <div className="dp-col">
         <span className="dp-label">ساعت</span>
         <div className="dp-hours">
-          <button onClick={() => setHours(Math.max(0, hours - 1))} aria-label="کم کردن ساعت"><Minus size={14} /></button>
-          <input
-            className="dp-num" type="number" inputMode="numeric" min="0" max={MAX_HOURS} value={hours}
+          <button type="button" onClick={() => setHours(Math.max(0, hours - 1))} aria-label="کم کردن ساعت"><Minus size={14} /></button>
+          <input className="dp-num" type="number" inputMode="numeric" min="0" max={MAX_HOURS} value={hours}
             onChange={(e) => setHours(Math.max(0, Math.min(MAX_HOURS, Math.floor(Number(e.target.value)) || 0)))}
-            onFocus={(e) => e.target.select()}
-          />
-          <button onClick={() => setHours(Math.min(MAX_HOURS, hours + 1))} aria-label="زیاد کردن ساعت"><Plus size={14} /></button>
+            onFocus={(e) => e.target.select()} />
+          <button type="button" onClick={() => setHours(Math.min(MAX_HOURS, hours + 1))} aria-label="زیاد کردن ساعت"><Plus size={14} /></button>
         </div>
       </div>
       <span className="dp-sep">:</span>
@@ -568,8 +732,6 @@ function NoteField({ value, onChange }) {
   );
 }
 
-/* Horizontal strip of recent days, newest first (rightmost in RTL), so a
-   record can be filed against an earlier day rather than only today. */
 function DayPicker({ today, value, onChange, days = 30 }) {
   const list = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -(days - 1));
@@ -596,70 +758,83 @@ function DayPicker({ today, value, onChange, days = 30 }) {
   );
 }
 
-function DurationSheet({
-  open, onClose, title, currentMinutes, onAdd, onSet, addLabel = "افزودن به مجموع",
-  withNote = false, initialValue = 0, initialNote = "", allowDate = false, today, initialDate,
-}) {
-  const [hours, setHours] = useState(Math.floor((initialValue || 0) / 60));
-  const [minutes, setMinutes] = useState((initialValue || 0) % 60);
-  const [note, setNote] = useState(initialNote || "");
-  const [day, setDay] = useState(initialDate);
-  // The sheet stays mounted while closed, so re-sync whenever it reopens
-  // with a different target (initial state alone only covers a fresh mount).
-  useEffect(() => {
-    if (!open) return;
-    setHours(Math.floor((initialValue || 0) / 60));
-    setMinutes((initialValue || 0) % 60);
-    setNote(initialNote || "");
-    setDay(initialDate);
-  }, [open, initialValue, initialNote, initialDate]);
-  const total = hours * 60 + minutes;
-  const noteArg = withNote ? (note.trim() || null) : undefined;
+function MonthPicker({ today, value, onChange, months = 12 }) {
+  const list = useMemo(() => {
+    return Array.from({ length: months }, (_, i) => addMonthsJalali(today.jy, today.jm, -i));
+  }, [today.jy, today.jm, months]);
+  const curKey = monthKey(today.jy, today.jm);
   return (
-    <Sheet open={open} onClose={onClose} title={title}>
-      {currentMinutes !== undefined && (
-        <p className="dp-current">مقدار فعلی: <b>{formatMinutes(currentMinutes)}</b></p>
-      )}
-      <DurationPicker hours={hours} minutes={minutes} setHours={setHours} setMinutes={setMinutes} />
-      {allowDate && today && <DayPicker today={today} value={day} onChange={setDay} />}
-      {withNote && <NoteField value={note} onChange={setNote} />}
-      <button className="primary-btn" disabled={total === 0} onClick={() => { onAdd(total, noteArg, day); onClose(); }}>{addLabel}</button>
-      {onSet && (
-        <button className="secondary-btn" onClick={() => { onSet(total, noteArg, day); onClose(); }}>جایگزینی مقدار کل با {formatMinutes(total)}</button>
-      )}
-    </Sheet>
+    <>
+      <label className="field-label">ماه ثبت</label>
+      <div className="day-picker">
+        {list.map((m) => {
+          const mk = monthKey(m.jy, m.jm);
+          const sel = mk === value;
+          return (
+            <button key={mk} type="button" className={"dpk-chip dpk-chip-wide" + (sel ? " dpk-chip-active" : "")} onClick={() => onChange(mk)}>
+              <span className="dpk-wd">{mk === curKey ? "این ماه" : toFa(m.jy)}</span>
+              <span className="dpk-num dpk-num-sm">{PERSIAN_MONTHS[m.jm - 1]}</span>
+            </button>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
-function CountSheet({
-  open, onClose, title, unit, currentValue, onAdd, onSet, addLabel = "افزودن به مجموع",
-  withNote = false, initialValue = 1, initialNote = "", allowDate = false, today, initialDate,
+/* One sheet for both count and time amounts, in both add and edit modes. */
+function AmountSheet({
+  open, onClose, title, type, unit, currentValue, onAdd, onSet,
+  addLabel = "افزودن به مجموع", withNote = false,
+  initialValue, initialNote = "", initialPeriod, periodMode, today,
 }) {
-  const [val, setVal] = useState(initialValue === undefined ? 1 : initialValue);
+  const startVal = initialValue === undefined ? (type === "time" ? 0 : 1) : initialValue;
+  const [val, setVal] = useState(type === "time" ? 0 : startVal);
+  const [hours, setHours] = useState(Math.floor((type === "time" ? startVal : 0) / 60));
+  const [minutes, setMinutes] = useState((type === "time" ? startVal : 0) % 60);
   const [note, setNote] = useState(initialNote || "");
-  const [day, setDay] = useState(initialDate);
+  const [period, setPeriod] = useState(initialPeriod);
+
+  // Stays mounted while closed, so re-sync each time it opens on a new target.
   useEffect(() => {
     if (!open) return;
-    setVal(initialValue === undefined ? 1 : initialValue);
+    const s = initialValue === undefined ? (type === "time" ? 0 : 1) : initialValue;
+    if (type === "time") { setHours(Math.floor(s / 60)); setMinutes(s % 60); }
+    else setVal(s);
     setNote(initialNote || "");
-    setDay(initialDate);
-  }, [open, initialValue, initialNote, initialDate]);
+    setPeriod(initialPeriod);
+  }, [open, initialValue, initialNote, initialPeriod, type]);
+
+  const amount = type === "time" ? hours * 60 + minutes : val;
   const noteArg = withNote ? (note.trim() || null) : undefined;
+
   return (
     <Sheet open={open} onClose={onClose} title={title}>
       {currentValue !== undefined && (
-        <p className="dp-current">مقدار فعلی: <b>{toFa(currentValue)}{unit ? " " + unit : ""}</b></p>
+        <p className="dp-current">مقدار فعلی: <b>{formatAmount(type, currentValue, unit)}</b></p>
       )}
-      <label className="field-label">مقدار{unit ? ` (${unit})` : ""}</label>
-      <div className="big-stepper">
-        <button onClick={() => setVal((v) => Math.max(0, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
-        <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={val} onChange={(e) => setVal(Math.max(0, Number(e.target.value) || 0))} onFocus={(e) => e.target.select()} />
-        <button onClick={() => setVal((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
-      </div>
-      {allowDate && today && <DayPicker today={today} value={day} onChange={setDay} />}
+      {type === "time" ? (
+        <DurationPicker hours={hours} minutes={minutes} setHours={setHours} setMinutes={setMinutes} />
+      ) : (
+        <>
+          <label className="field-label">مقدار{unit ? ` (${unit})` : ""}</label>
+          <div className="big-stepper">
+            <button type="button" onClick={() => setVal((v) => Math.max(0, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
+            <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={val}
+              onChange={(e) => setVal(Math.max(0, Number(e.target.value) || 0))} onFocus={(e) => e.target.select()} />
+            <button type="button" onClick={() => setVal((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
+          </div>
+        </>
+      )}
+      {periodMode === "daily" && today && <DayPicker today={today} value={period} onChange={setPeriod} />}
+      {periodMode === "monthly" && today && <MonthPicker today={today} value={period} onChange={setPeriod} />}
       {withNote && <NoteField value={note} onChange={setNote} />}
-      <button className="primary-btn" disabled={val === 0} onClick={() => { onAdd(val, noteArg, day); onClose(); }}>{addLabel}</button>
-      {onSet && <button className="secondary-btn" onClick={() => { onSet(val, noteArg, day); onClose(); }}>جایگزینی مقدار کل با {toFa(val)}{unit ? " " + unit : ""}</button>}
+      <button className="primary-btn" disabled={amount === 0} onClick={() => { onAdd(amount, noteArg, period); onClose(); }}>{addLabel}</button>
+      {onSet && (
+        <button className="secondary-btn" onClick={() => { onSet(amount, noteArg, period); onClose(); }}>
+          جایگزینی مقدار کل با {formatAmount(type, amount, unit)}
+        </button>
+      )}
     </Sheet>
   );
 }
@@ -679,8 +854,19 @@ function Toast({ toast, onClose }) {
   );
 }
 
+function RolloverBanner({ count, label, onRollover }) {
+  if (!count) return null;
+  return (
+    <div className="rollover-banner">
+      <ArrowDown size={15} />
+      <span>{toFa(count)} {label}</span>
+      <button onClick={onRollover}>انتقال</button>
+    </div>
+  );
+}
+
 /* =========================================================================
-   SETTINGS SHEET — categories + rollover behaviour
+   SETTINGS + SEARCH
    ========================================================================= */
 
 function SettingsSheet({ open, onClose, categories, addCategory, deleteCategory, settings, updateSettings }) {
@@ -688,7 +874,11 @@ function SettingsSheet({ open, onClose, categories, addCategory, deleteCategory,
   const [colorKey, setColorKey] = useState("primary");
   return (
     <Sheet open={open} onClose={onClose} title="تنظیمات">
-      <h4 className="settings-h">دسته‌بندی‌ها</h4>
+      <h4 className="settings-h">ظاهر</h4>
+      <Segmented options={THEME_MODES} value={settings.theme || "auto"} onChange={(v) => updateSettings({ theme: v })} />
+      <p className="field-hint">«خودکار» از تنظیم روشن/تیرهٔ خود گوشی پیروی می‌کند.</p>
+
+      <h4 className="settings-h settings-h-gap">دسته‌بندی‌ها</h4>
       <ul className="cat-manage-list">
         {categories.map((c) => {
           const palette = COLOR_PALETTE[c.colorKey] || COLOR_PALETTE.slate;
@@ -726,8 +916,6 @@ function SettingsSheet({ open, onClose, categories, addCategory, deleteCategory,
   );
 }
 
-/* Search across every kind of item, matching title and description.
-   Selecting a result opens that item's detail sheet. */
 function SearchSheet({ open, onClose, goals, tasks, habits, trackerItems, onOpenDetail }) {
   const [q, setQ] = useState("");
   useEffect(() => { if (open) setQ(""); }, [open]);
@@ -754,11 +942,12 @@ function SearchSheet({ open, onClose, goals, tasks, habits, trackerItems, onOpen
           <ul className="list">
             {g.items.map((it) => (
               <li key={it.id} className="list-row">
+                {it.category && <CategoryEdge id={it.category} />}
                 <button className="row-body" onClick={() => { onOpenDetail({ kind: g.kind, id: it.id }); onClose(); }}>
                   <span className={"list-text" + (it.completed ? " list-text-done" : "")}>{it.title}</span>
                   {it.description && <span className="row-desc">{it.description}</span>}
                 </button>
-                {it.category && <CategoryChip id={it.category} />}
+                {it.archived && <span className="archived-badge">آرشیو</span>}
               </li>
             ))}
           </ul>
@@ -822,33 +1011,22 @@ function BottomNav({ tab, setTab }) {
         const active = tab === t.id;
         return (
           <button key={t.id} className={"nav-btn" + (active ? " nav-btn-active" : "")} onClick={() => setTab(t.id)}>
-            <Icon size={18} strokeWidth={active ? 2.4 : 2} />
-            <span>{t.label}</span>
+            <span className="nav-icon-wrap"><Icon size={19} strokeWidth={active ? 2.4 : 1.9} /></span>
+            <span className="nav-label">{t.label}</span>
           </button>
         );
       })}
     </nav>
   );
 }
-
-function RolloverBanner({ count, label, onRollover }) {
-  if (!count) return null;
-  return (
-    <div className="rollover-banner">
-      <ArrowDown size={15} />
-      <span>{toFa(count)} {label}</span>
-      <button onClick={onRollover}>انتقال</button>
-    </div>
-  );
-}
 /* =========================================================================
-   ROW COMPONENTS — each memoized so toggling one row doesn't re-render the
-   whole list. Tapping the body opens the detail sheet; the circle toggles.
+   ROWS
    ========================================================================= */
 
 const TaskRow = memo(function TaskRow({ task, onToggle, onOpen }) {
   return (
     <li className="list-row">
+      <CategoryEdge id={task.category} />
       <button className={"check-circle" + (task.completed ? " check-circle-done" : "")} onClick={() => onToggle(task.id)} aria-label="تغییر وضعیت">
         {task.completed && <Check size={13} strokeWidth={3} />}
       </button>
@@ -863,25 +1041,26 @@ const TaskRow = memo(function TaskRow({ task, onToggle, onOpen }) {
   );
 });
 
-const GoalRow = memo(function GoalRow({ goal, linkedTitle, onToggle, onOpen }) {
+const GoalRow = memo(function GoalRow({ goal, total, linkedTitle, feedsCount, onToggle, onOpen }) {
   const measurable = isMeasurable(goal);
   return (
     <li className="list-row goal-row">
+      <CategoryEdge id={goal.category} />
       <button
         className={"check-circle" + (goal.completed ? " check-circle-done" : "")}
         onClick={() => (measurable ? onOpen({ kind: "goal", id: goal.id }) : onToggle(goal.id))}
-        aria-label={measurable ? "ثبت پیشرفت" : "تغییر وضعیت"}
-      >
+        aria-label={measurable ? "ثبت پیشرفت" : "تغییر وضعیت"}>
         {goal.completed && <Check size={13} strokeWidth={3} />}
       </button>
       <button className="row-body" onClick={() => onOpen({ kind: "goal", id: goal.id })}>
         <span className={"list-text" + (goal.completed ? " list-text-done" : "")}>{goal.title}</span>
         {goal.description && <span className="row-desc">{goal.description}</span>}
-        {linkedTitle && <span className="goal-linked">مرتبط با: {linkedTitle}</span>}
+        {linkedTitle && <span className="goal-linked"><ArrowUpRight size={10} /> {linkedTitle}</span>}
+        {feedsCount > 0 && <span className="goal-linked">{toFa(feedsCount)} هدف هفتگی به این هدف می‌ریزد</span>}
         {measurable && (
           <span className="row-progress">
-            <ProgressBar value={goalProgressPct(goal)} />
-            <span className="row-progress-text">{goalProgressText(goal)}</span>
+            <ProgressBar value={progressPctFor(goal, total)} />
+            <span className="row-progress-text">{progressTextFor(goal, total)}</span>
           </span>
         )}
       </button>
@@ -892,12 +1071,16 @@ const GoalRow = memo(function GoalRow({ goal, linkedTitle, onToggle, onOpen }) {
   );
 });
 
-const HabitRow = memo(function HabitRow({ habit, today, onToggle, onOpen }) {
+const HabitRow = memo(function HabitRow({ habit, today, onToggle, onSetValue, onOpen, onOpenAmount }) {
   const tKey = dateKey(today.jy, today.jm, today.jd);
-  const done = !!habit.completions[tKey];
+  const ok = habitDaySuccess(habit, tKey);
   const streak = habitStreak(habit, today);
+  const measured = habitMeasured(habit);
+  const value = habitDayValue(habit, tKey);
   const categories = useContext(CategoriesContext);
   const palette = COLOR_PALETTE[categoryOf(categories, habit.category).colorKey] || COLOR_PALETTE.slate;
+  const { days, elapsed } = habitWeekDays(habit, today);
+  const hasWeekly = habit.weeklyMin != null || habit.weeklyMax != null;
   const last7 = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -6);
     return Array.from({ length: 7 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
@@ -905,26 +1088,43 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onOpen }) {
 
   return (
     <li className="habit-card">
+      <CategoryEdge id={habit.category} />
       <div className="habit-top">
-        <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => onToggle(habit.id, tKey)} aria-label="تغییر وضعیت">
-          {done && <Check size={13} strokeWidth={3} />}
-        </button>
+        {measured ? (
+          <span className={"status-dot" + (ok ? " status-dot-ok" : "")} aria-label={ok ? "در محدوده" : "خارج از محدوده"}>
+            {ok && <Check size={12} strokeWidth={3} />}
+          </span>
+        ) : (
+          <button className={"check-circle" + (ok ? " check-circle-done" : "")} onClick={() => onToggle(habit.id, tKey)} aria-label="تغییر وضعیت">
+            {ok && <Check size={13} strokeWidth={3} />}
+          </button>
+        )}
         <button className="row-body" onClick={() => onOpen({ kind: "habit", id: habit.id })}>
           <span className="list-text">{habit.title}</span>
-          {habit.description && <span className="row-desc">{habit.description}</span>}
+          {habitTargetText(habit) && <span className="row-desc">{habitTargetText(habit)}</span>}
         </button>
+        {measured && habit.metric === "count" && (
+          <div className="stepper">
+            <button onClick={() => onSetValue(habit.id, tKey, Math.max(0, value - 1))} aria-label="کم کردن"><Minus size={13} /></button>
+            <button className="stepper-val" onClick={() => onOpenAmount(habit, value)}>{toFa(value)}{habit.unit ? ` ${habit.unit}` : ""}</button>
+            <button onClick={() => onSetValue(habit.id, tKey, value + 1)} aria-label="زیاد کردن"><Plus size={13} /></button>
+          </div>
+        )}
+        {measured && habit.metric === "time" && (
+          <button className="time-chip" onClick={() => onOpenAmount(habit, value)}><Clock size={12} />{formatMinutes(value)}</button>
+        )}
         {habit.reminderTime && <span className="reminder-badge"><Clock size={11} />{toFa(habit.reminderTime)}</span>}
-        <CategoryChip id={habit.category} />
       </div>
       <div className="habit-bottom">
         <div className="habit-streak">
           <Flame size={13} color={streak > 0 ? "var(--c-saffron)" : "var(--c-ink-faint)"} strokeWidth={2.4} />
           <span>{toFa(streak)} روز پیاپی</span>
+          {hasWeekly && <span className="habit-week">· این هفته {toFa(days)} از {toFa(elapsed)} روز</span>}
         </div>
         <div className="habit-dots">
           {last7.map((d) => {
             const dk = dateKey(d.jy, d.jm, d.jd);
-            const filled = !!habit.completions[dk];
+            const filled = habitDaySuccess(habit, dk);
             return <Circle key={dk} size={9} fill={filled ? palette.hex : "none"} color={filled ? palette.hex : "var(--c-border)"} strokeWidth={filled ? 0 : 1.8} />;
           })}
         </div>
@@ -933,19 +1133,8 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onOpen }) {
   );
 });
 
-function habitStreak(habit, today) {
-  let streak = 0;
-  let cur = today;
-  while (habit.completions[dateKey(cur.jy, cur.jm, cur.jd)]) {
-    streak += 1;
-    cur = addDaysJalali(cur.jy, cur.jm, cur.jd, -1);
-  }
-  return streak;
-}
-
 /* =========================================================================
-   DETAIL SHEETS — opened by tapping any row. Show every field, allow
-   editing, deleting, and (for measurable goals) logging progress.
+   DETAIL SHEETS
    ========================================================================= */
 
 function DetailField({ label, children }) {
@@ -958,33 +1147,35 @@ function DetailField({ label, children }) {
   );
 }
 
-function DetailActions({ onEdit, onDelete }) {
+function DetailActions({ onEdit, onDelete, extra }) {
   return (
     <div className="detail-actions">
+      {extra}
       <button className="secondary-btn" onClick={onEdit}><Pencil size={14} /> ویرایش</button>
       <button className="danger-btn" onClick={onDelete}><Trash2 size={14} /> حذف</button>
     </div>
   );
 }
 
-/* One row of a progress history. Tapping expands it in place to reveal the
-   full note plus edit/delete, so a long note never pushes the rest of the
-   history off screen and the row stays a single line when collapsed. */
-function LogEntryRow({ entry, targetType, unit, todayKey, valueText, onEdit, onDelete }) {
+/* A history row. Collapsed it is one line; tapping reveals the full note and
+   the edit/delete actions, so long notes never crowd the list. Entries that
+   came from a linked weekly goal are read-only here and say where they came
+   from — they are edited on the weekly goal itself. */
+function LogEntryRow({ entry, targetType, unit, todayKey, currentLabel = "امروز", valueText, onEdit, onDelete }) {
   const [open, setOpen] = useState(false);
-  const [jy, jm, jd] = entry.dateKey.split("-").map(Number);
   const hasNote = !!entry.note;
-  const dateText = `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]}${entry.dateKey === todayKey ? " (امروز)" : ""}`;
+  const dateText = formatPeriodKey(entry.dateKey) + (entry.dateKey === todayKey ? ` (${currentLabel})` : "");
   const shown = valueText !== undefined ? valueText : formatAmount(targetType, entry.value, unit);
-  const expandable = !!(onEdit || onDelete || hasNote);
+  const expandable = !!(onEdit || onDelete || hasNote || entry.sourceTitle);
   return (
     <li className={"log-row" + (open ? " log-row-open" : "")}>
       <div className="log-row-top">
         {expandable ? (
           <button className="log-row-btn" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
             <span className="log-date">{dateText}</span>
-            {hasNote && !open && <span className="log-note-preview">{entry.note}</span>}
-            <ChevronDown size={13} style={{ transform: open ? "rotate(180deg)" : "none", flexShrink: 0, color: "var(--c-ink-faint)" }} />
+            {entry.sourceTitle && !open && <span className="log-src">از {entry.sourceTitle}</span>}
+            {hasNote && !open && !entry.sourceTitle && <span className="log-note-preview">{entry.note}</span>}
+            <ChevronDown size={13} className={open ? "chev-open" : ""} />
           </button>
         ) : (
           <span className="log-row-btn log-row-static"><span className="log-date">{dateText}</span></span>
@@ -993,6 +1184,7 @@ function LogEntryRow({ entry, targetType, unit, todayKey, valueText, onEdit, onD
       </div>
       {open && (
         <>
+          {entry.sourceTitle && <p className="log-note-full log-src-full"><ArrowUpRight size={12} /> از هدف هفتگی «{entry.sourceTitle}» — برای تغییر، همان‌جا ویرایشش کن.</p>}
           {hasNote && <p className="log-note-full">{entry.note}</p>}
           {(onEdit || onDelete) && (
             <div className="log-row-actions">
@@ -1012,19 +1204,27 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
   const measurable = isMeasurable(goal);
   const todayKey = dateKey(today.jy, today.jm, today.jd);
   const linked = goal.linkedMonthlyId ? goals.find((g) => g.id === goal.linkedMonthlyId) : null;
+  const fed = linkedEntriesFor(goal, goals);
+  const total = goalTotal(goal, goals);
+  const ownSum = goalOwnProgress(goal);
+  const fedSum = total - ownSum;
 
   const periodText = goal.type === "monthly"
     ? (() => { const [jy, jm] = goal.monthKey.split("-").map(Number); return `${PERSIAN_MONTHS[jm - 1]} ${toFa(jy)}`; })()
     : (() => { const [jy, jm, jd] = goal.weekKey.split("-").map(Number); const end = addDaysJalali(jy, jm, jd, 6); return `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]} تا ${toFa(end.jd)} ${PERSIAN_MONTHS[end.jm - 1]}`; })();
 
-  const logEntries = (goal.progressEntries || []).slice().sort((a, b) => (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : 0));
+  const own = (goal.progressEntries || []).map((e) => ({ ...e }));
+  const all = own.concat(fed).sort((a, b) => (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : 0));
+
+  const mismatch = linked && isMeasurable(goal) && isMeasurable(linked) && goal.targetType !== linked.targetType;
 
   return (
     <>
       <DetailField label="دسته‌بندی"><CategoryChip id={goal.category} /></DetailField>
       <DetailField label="نوع">{goal.type === "monthly" ? "هدف ماهانه" : "هدف هفتگی"}</DetailField>
       <DetailField label="بازه">{periodText}</DetailField>
-      {linked && <DetailField label="مرتبط با">{linked.title}</DetailField>}
+      {linked && <DetailField label="مرتبط با">{linked.title}{mismatch ? " (واحدها یکی نیست — پیشرفت منتقل نمی‌شود)" : ""}</DetailField>}
+      {fed.length > 0 && <DetailField label="ورودی‌ها">{toFa(fed.length)} ثبت از اهداف هفتگی مرتبط</DetailField>}
       {goal.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(goal.reminderTime)}</DetailField>}
       {goal.rolloverCount > 0 && <DetailField label="انتقال">{toFa(goal.rolloverCount)} بار از بازهٔ قبل منتقل شده</DetailField>}
       {goal.description && <DetailField label="توضیحات"><span className="detail-desc">{goal.description}</span></DetailField>}
@@ -1033,23 +1233,25 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
         <div className="detail-progress">
           <div className="detail-progress-head">
             <span>پیشرفت</span>
-            <b>{goalProgressText(goal)}</b>
+            <b>{progressTextFor(goal, total)}</b>
           </div>
-          <ProgressBar value={goalProgressPct(goal)} color={goal.completed ? "var(--c-success)" : "var(--c-primary)"} />
+          <ProgressBar value={progressPctFor(goal, total)} color={goal.completed ? "var(--c-success)" : "var(--c-primary)"} />
+          {fedSum > 0 && (
+            <p className="detail-split">
+              مستقیم: {formatAmount(goal.targetType, ownSum, goal.unit)} · از اهداف هفتگی: {formatAmount(goal.targetType, fedSum, goal.unit)}
+            </p>
+          )}
           {goal.completed && <p className="detail-done-note"><Check size={13} /> به هدف رسیدی</p>}
-          <button className="primary-btn" onClick={() => setAmountSheet(true)}>
-            <Plus size={15} /> ثبت پیشرفت
-          </button>
+          <button className="primary-btn" onClick={() => setAmountSheet(true)}><Plus size={15} /> ثبت پیشرفت</button>
 
-          {logEntries.length > 0 && (
+          {all.length > 0 && (
             <>
               <span className="detail-label detail-log-title">ثبت‌های پیشرفت</span>
               <ul className="log-list">
-                {logEntries.map((entry) => (
-                  <LogEntryRow key={entry.id} entry={entry} targetType={goal.targetType} unit={goal.unit}
-                    todayKey={todayKey}
-                    onEdit={() => setEditEntry(entry)}
-                    onDelete={() => onClearLogEntry(goal.id, entry.id)} />
+                {all.map((entry) => (
+                  <LogEntryRow key={entry.id} entry={entry} targetType={goal.targetType} unit={goal.unit} todayKey={todayKey}
+                    onEdit={entry.sourceTitle ? undefined : () => setEditEntry(entry)}
+                    onDelete={entry.sourceTitle ? undefined : () => onClearLogEntry(goal.id, entry.id)} />
                 ))}
               </ul>
             </>
@@ -1063,42 +1265,22 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
 
       <DetailActions onEdit={onEdit} onDelete={onDelete} />
 
-      {goal.targetType === "time" && (
+      {measurable && (
         <>
-          <DurationSheet
-            open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت زمان انجام‌شده"
-            currentMinutes={goalProgress(goal)} withNote allowDate today={today} initialDate={todayKey}
-            addLabel="ثبت"
-            onAdd={(mins, note, dk) => onLogProgress(goal.id, dk || todayKey, mins, note)}
-          />
-          <DurationSheet
+          <AmountSheet
+            open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت پیشرفت"
+            type={goal.targetType} unit={goal.unit} currentValue={total}
+            withNote periodMode="daily" today={today} initialPeriod={todayKey} addLabel="ثبت"
+            onAdd={(v, note, dk) => onLogProgress(goal.id, dk || todayKey, v, note)} />
+          <AmountSheet
             open={!!editEntry} onClose={() => setEditEntry(null)} title="ویرایش ثبت"
-            withNote allowDate today={today}
-            initialValue={editEntry ? editEntry.value : 0}
+            type={goal.targetType} unit={goal.unit}
+            withNote periodMode="daily" today={today}
+            initialValue={editEntry ? editEntry.value : undefined}
             initialNote={editEntry ? editEntry.note || "" : ""}
-            initialDate={editEntry ? editEntry.dateKey : todayKey}
+            initialPeriod={editEntry ? editEntry.dateKey : todayKey}
             addLabel="ذخیرهٔ تغییرات"
-            onAdd={(mins, note, dk) => onUpdateEntry(goal.id, editEntry.id, { value: mins, note, dateKey: dk || editEntry.dateKey })}
-          />
-        </>
-      )}
-      {goal.targetType === "count" && (
-        <>
-          <CountSheet
-            open={amountSheet} onClose={() => setAmountSheet(false)} title="ثبت مقدار انجام‌شده"
-            unit={goal.unit} currentValue={goalProgress(goal)} withNote allowDate today={today} initialDate={todayKey}
-            addLabel="ثبت"
-            onAdd={(v, note, dk) => onLogProgress(goal.id, dk || todayKey, v, note)}
-          />
-          <CountSheet
-            open={!!editEntry} onClose={() => setEditEntry(null)} title="ویرایش ثبت"
-            unit={goal.unit} withNote allowDate today={today}
-            initialValue={editEntry ? editEntry.value : 1}
-            initialNote={editEntry ? editEntry.note || "" : ""}
-            initialDate={editEntry ? editEntry.dateKey : todayKey}
-            addLabel="ذخیرهٔ تغییرات"
-            onAdd={(v, note, dk) => onUpdateEntry(goal.id, editEntry.id, { value: v, note, dateKey: dk || editEntry.dateKey })}
-          />
+            onAdd={(v, note, dk) => onUpdateEntry(goal.id, editEntry.id, { value: v, note, dateKey: dk || editEntry.dateKey })} />
         </>
       )}
     </>
@@ -1124,129 +1306,197 @@ function TaskDetail({ task, goals, onEdit, onDelete, onToggle }) {
   );
 }
 
-function HabitDetail({ habit, today, onEdit, onDelete, onToggle }) {
+function HabitDetail({ habit, today, onEdit, onDelete, onToggle, onSetValue }) {
+  const [sheet, setSheet] = useState(false);
+  const [editDay, setEditDay] = useState(null);
   const tKey = dateKey(today.jy, today.jm, today.jd);
-  const done = !!habit.completions[tKey];
+  const measured = habitMeasured(habit);
+  const value = habitDayValue(habit, tKey);
+  const ok = habitDaySuccess(habit, tKey);
   const streak = habitStreak(habit, today);
-  const total = Object.keys(habit.completions).length;
+  const { days, elapsed } = habitWeekDays(habit, today);
   const last30 = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -29);
     return Array.from({ length: 30 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
   }, [tKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const categories = useContext(CategoriesContext);
   const palette = COLOR_PALETTE[categoryOf(categories, habit.category).colorKey] || COLOR_PALETTE.slate;
+  const successCount = last30.filter((d) => habitDaySuccess(habit, dateKey(d.jy, d.jm, d.jd))).length;
+
+  const weeklyText = (() => {
+    if (habit.weeklyMin == null && habit.weeklyMax == null) return null;
+    let s = `${toFa(days)} روز موفق از ${toFa(elapsed)} روز گذشتهٔ این هفته`;
+    if (habit.weeklyMin != null) s += ` · حداقل ${toFa(habit.weeklyMin)}`;
+    if (habit.weeklyMax != null) s += ` · حداکثر ${toFa(habit.weeklyMax)}`;
+    return s;
+  })();
+
+  const targetDay = editDay || tKey;
+  const targetVal = habitDayValue(habit, targetDay);
 
   return (
     <>
       <DetailField label="دسته‌بندی"><CategoryChip id={habit.category} /></DetailField>
+      <DetailField label="نوع">{(HABIT_METRICS.find((m) => m.id === (habit.metric || "simple")) || {}).label}</DetailField>
+      {habitTargetText(habit) && <DetailField label="محدوده">{habitTargetText(habit)}</DetailField>}
       <DetailField label="روزهای پیاپی">{toFa(streak)} روز</DetailField>
-      <DetailField label="مجموع روزهای انجام‌شده">{toFa(total)} روز</DetailField>
+      {weeklyText && <DetailField label="این هفته">{weeklyText}</DetailField>}
+      <DetailField label="۳۰ روز اخیر">{toFa(successCount)} روز موفق</DetailField>
       {habit.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(habit.reminderTime)}</DetailField>}
       {habit.description && <DetailField label="توضیحات"><span className="detail-desc">{habit.description}</span></DetailField>}
+
+      <div className="detail-progress">
+        <div className="detail-progress-head">
+          <span>امروز</span>
+          <b className={ok ? "val-ok" : "val-off"}>
+            {measured ? formatAmount(habit.metric, value, habit.unit) : (ok ? "انجام شده" : "انجام نشده")}
+            {measured && (ok ? " ✓" : "")}
+          </b>
+        </div>
+        {measured ? (
+          <button className="primary-btn" onClick={() => setSheet(true)}><Plus size={15} /> ثبت مقدار</button>
+        ) : (
+          <button className={"toggle-big-btn" + (ok ? " toggle-big-done" : "")} onClick={() => onToggle(habit.id, tKey)}>
+            {ok ? <><Check size={15} /> برگرداندن</> : "ثبت انجام برای امروز"}
+          </button>
+        )}
+      </div>
+
       <span className="detail-label detail-log-title">۳۰ روز اخیر</span>
       <div className="heatmap">
         {last30.map((d) => {
           const dk = dateKey(d.jy, d.jm, d.jd);
-          const filled = !!habit.completions[dk];
-          return <span key={dk} className="heat-cell" title={`${toFa(d.jd)} ${PERSIAN_MONTHS[d.jm - 1]}`} style={{ background: filled ? palette.hex : "var(--c-border-soft)" }} />;
+          const good = habitDaySuccess(habit, dk);
+          return <span key={dk} className="heat-cell" title={`${toFa(d.jd)} ${PERSIAN_MONTHS[d.jm - 1]}`}
+            style={{ background: good ? palette.hex : "var(--c-track)" }} />;
         })}
       </div>
-      <button className={"toggle-big-btn" + (done ? " toggle-big-done" : "")} onClick={() => onToggle(habit.id, tKey)}>
-        {done ? <><Check size={15} /> امروز انجام شده — برگرداندن</> : "ثبت انجام برای امروز"}
-      </button>
+
       <DetailActions onEdit={onEdit} onDelete={onDelete} />
+
+      {measured && (
+        <AmountSheet
+          open={sheet || !!editDay} onClose={() => { setSheet(false); setEditDay(null); }}
+          title={editDay ? "ویرایش مقدار" : "ثبت مقدار امروز"}
+          type={habit.metric} unit={habit.unit} currentValue={targetVal}
+          periodMode="daily" today={today} initialPeriod={targetDay}
+          addLabel="افزودن به مقدار روز"
+          onAdd={(v, _n, dk) => onSetValue(habit.id, dk || targetDay, habitDayValue(habit, dk || targetDay) + v)}
+          onSet={(v, _n, dk) => onSetValue(habit.id, dk || targetDay, v)} />
+      )}
     </>
   );
 }
 
-function TrackerItemDetail({ item, trackerLogs, today, onEdit, onDelete, onSetLog }) {
+function TrackerItemDetail({ item, group, trackerEntries, today, onEdit, onDelete, onAddEntry, onUpdateEntry, onDeleteEntry, onToggleArchive }) {
   const [sheet, setSheet] = useState(false);
-  const [editDay, setEditDay] = useState(null);
-  const todayKey = dateKey(today.jy, today.jm, today.jd);
-  const current = trackerValue(trackerLogs, item.id, todayKey, item.type);
-  const currentNote = trackerNote(trackerLogs, item.id, todayKey);
-  const last14 = useMemo(() => {
-    const start = addDaysJalali(today.jy, today.jm, today.jd, -13);
-    return Array.from({ length: 14 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
-  }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  const [editEntry, setEditEntry] = useState(null);
+  const monthly = group && group.period === "monthly";
+  const curKey = monthly ? monthKey(today.jy, today.jm) : dateKey(today.jy, today.jm, today.jd);
+  const mine = trackerEntries.filter((e) => e.itemId === item.id)
+    .slice().sort((a, b) => (a.periodKey < b.periodKey ? 1 : a.periodKey > b.periodKey ? -1 : 0));
+  const curTotal = periodTotal(trackerEntries, item, curKey);
   const typeLabel = (TRACKER_TYPES.find((t) => t.id === item.type) || {}).label;
-
-  // The sheet edits one specific day: today when adding, or the tapped day.
-  const targetDay = editDay || todayKey;
-  const targetVal = trackerValue(trackerLogs, item.id, targetDay, item.type);
-  const targetNote = trackerNote(trackerLogs, item.id, targetDay);
-  const sheetOpen = sheet || !!editDay;
-  function closeSheet() { setSheet(false); setEditDay(null); }
 
   return (
     <>
       <DetailField label="نوع ثبت">{typeLabel}</DetailField>
+      {group && <DetailField label="گروه">{group.title} ({monthly ? "ماهانه" : "روزانه"})</DetailField>}
       {item.unit && <DetailField label="واحد">{item.unit}</DetailField>}
+      {item.archived && <DetailField label="وضعیت">آرشیو شده</DetailField>}
       {item.description && <DetailField label="توضیحات"><span className="detail-desc">{item.description}</span></DetailField>}
 
       <div className="detail-progress">
         <div className="detail-progress-head">
-          <span>مقدار امروز</span>
-          <b>{item.type === "boolean" ? (current ? "انجام شده" : "انجام نشده") : formatAmount(item.type, current, item.unit)}</b>
+          <span>{monthly ? "این ماه" : "امروز"}</span>
+          <b>{item.type === "boolean" ? (curTotal ? "انجام شده" : "انجام نشده") : formatAmount(item.type, curTotal, item.unit)}</b>
         </div>
         {item.type === "boolean" ? (
-          <>
-            <button className={"toggle-big-btn" + (current ? " toggle-big-done" : "")} onClick={() => onSetLog(item.id, todayKey, !current, currentNote)}>
-              {current ? <><Check size={15} /> برگرداندن</> : "ثبت انجام برای امروز"}
-            </button>
-            <label className="field-label">توضیح امروز (اختیاری)</label>
-            <textarea className="note-area note-area-sm" value={currentNote || ""}
-              placeholder="مثلاً: چطور پیش رفت؟"
-              onChange={(e) => onSetLog(item.id, todayKey, current, e.target.value.trim() || null)} />
-          </>
+          <button className={"toggle-big-btn" + (curTotal ? " toggle-big-done" : "")}
+            onClick={() => curTotal ? onDeleteEntry(item.id, curKey, true) : onAddEntry(item.id, curKey, true, null)}>
+            {curTotal ? <><Check size={15} /> برگرداندن</> : "ثبت انجام"}
+          </button>
         ) : (
           <button className="primary-btn" onClick={() => setSheet(true)}><Plus size={15} /> ثبت مقدار</button>
         )}
       </div>
 
-      <span className="detail-label detail-log-title">۱۴ روز اخیر</span>
-      <ul className="log-list">
-        {last14.slice().reverse().map((d) => {
-          const dk = dateKey(d.jy, d.jm, d.jd);
-          if (!trackerHasEntry(trackerLogs, item.id, dk)) return null;
-          const v = trackerValue(trackerLogs, item.id, dk, item.type);
-          const n = trackerNote(trackerLogs, item.id, dk);
-          return (
-            <LogEntryRow
-              key={dk} entry={{ id: dk, dateKey: dk, value: v, note: n }}
-              targetType={item.type} unit={item.unit} todayKey={todayKey}
-              valueText={item.type === "boolean" ? "✓" : formatAmount(item.type, v, item.unit)}
-              onEdit={item.type === "boolean" ? undefined : () => setEditDay(dk)}
-              onDelete={() => onSetLog(item.id, dk, item.type === "boolean" ? false : 0, null)}
-            />
-          );
-        })}
-      </ul>
-
-      <DetailActions onEdit={onEdit} onDelete={onDelete} />
-
-      {item.type === "time" && (
-        <DurationSheet open={sheetOpen} onClose={closeSheet}
-          title={editDay ? "ویرایش زمان" : "ثبت زمان"}
-          currentMinutes={targetVal} withNote initialNote={targetNote || ""}
-          allowDate today={today} initialDate={targetDay}
-          onAdd={(mins, note, dk) => onSetLog(item.id, dk || targetDay, trackerValue(trackerLogs, item.id, dk || targetDay, item.type) + mins, note)}
-          onSet={(mins, note, dk) => onSetLog(item.id, dk || targetDay, mins, note)} />
+      {mine.length > 0 && (
+        <>
+          <span className="detail-label detail-log-title">همهٔ ثبت‌ها</span>
+          <ul className="log-list">
+            {mine.map((e) => (
+              <LogEntryRow key={e.id} entry={{ ...e, dateKey: e.periodKey }} targetType={item.type} unit={item.unit} todayKey={curKey}
+                currentLabel={monthly ? "این ماه" : "امروز"}
+                valueText={item.type === "boolean" ? "✓" : formatAmount(item.type, e.value, item.unit)}
+                onEdit={item.type === "boolean" ? undefined : () => setEditEntry(e)}
+                onDelete={() => onDeleteEntry(item.id, e.periodKey, false, e.id)} />
+            ))}
+          </ul>
+        </>
       )}
-      {item.type === "count" && (
-        <CountSheet open={sheetOpen} onClose={closeSheet}
-          title={editDay ? "ویرایش مقدار" : "ثبت مقدار"} unit={item.unit}
-          currentValue={targetVal} withNote initialNote={targetNote || ""}
-          allowDate today={today} initialDate={targetDay}
-          onAdd={(v, note, dk) => onSetLog(item.id, dk || targetDay, trackerValue(trackerLogs, item.id, dk || targetDay, item.type) + v, note)}
-          onSet={(v, note, dk) => onSetLog(item.id, dk || targetDay, v, note)} />
+
+      <DetailActions onEdit={onEdit} onDelete={onDelete}
+        extra={<button className="secondary-btn" onClick={() => onToggleArchive(item.id)}>
+          {item.archived ? <><RotateBack size={14} /> بازگردانی</> : <><Archive size={14} /> آرشیو</>}
+        </button>} />
+
+      {item.type !== "boolean" && (
+        <>
+          <AmountSheet
+            open={sheet} onClose={() => setSheet(false)} title="ثبت مقدار"
+            type={item.type} unit={item.unit} currentValue={curTotal}
+            withNote periodMode={monthly ? "monthly" : "daily"} today={today} initialPeriod={curKey} addLabel="ثبت"
+            onAdd={(v, note, pk) => onAddEntry(item.id, pk || curKey, v, note)} />
+          <AmountSheet
+            open={!!editEntry} onClose={() => setEditEntry(null)} title="ویرایش ثبت"
+            type={item.type} unit={item.unit}
+            withNote periodMode={monthly ? "monthly" : "daily"} today={today}
+            initialValue={editEntry ? editEntry.value : undefined}
+            initialNote={editEntry ? editEntry.note || "" : ""}
+            initialPeriod={editEntry ? editEntry.periodKey : curKey}
+            addLabel="ذخیرهٔ تغییرات"
+            onAdd={(v, note, pk) => onUpdateEntry(editEntry.id, { value: v, note, periodKey: pk || editEntry.periodKey })} />
+        </>
       )}
     </>
   );
 }
 /* =========================================================================
-   FORMS — each accepts `initial` so the same form handles create and edit.
+   FORMS — each accepts `initial` so one form covers create and edit.
    ========================================================================= */
+
+function BoundInput({ label, metric, unit, value, onChange }) {
+  // A bound is optional: empty means "no limit".
+  const [h, setH] = useState(value != null && metric === "time" ? Math.floor(value / 60) : 0);
+  const [m, setM] = useState(value != null && metric === "time" ? value % 60 : 0);
+  useEffect(() => {
+    if (metric !== "time") return;
+    if (value == null) { setH(0); setM(0); } else { setH(Math.floor(value / 60)); setM(value % 60); }
+  }, [value, metric]);
+  const enabled = value != null;
+  return (
+    <div className="bound-block">
+      <label className="toggle-row toggle-row-tight">
+        <input type="checkbox" checked={enabled} onChange={(e) => onChange(e.target.checked ? (metric === "time" ? h * 60 + m : 1) : null)} />
+        <span>{label}</span>
+      </label>
+      {enabled && (metric === "time" ? (
+        <DurationPicker hours={h} minutes={m}
+          setHours={(nh) => { setH(nh); onChange(nh * 60 + m); }}
+          setMinutes={(nm) => { setM(nm); onChange(h * 60 + nm); }} />
+      ) : (
+        <div className="big-stepper">
+          <button type="button" onClick={() => onChange(Math.max(0, value - 1))} aria-label="کم کردن"><Minus size={16} /></button>
+          <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={value}
+            onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))} onFocus={(e) => e.target.select()} />
+          <button type="button" onClick={() => onChange(value + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
+        </div>
+      ))}
+      {enabled && unit && metric === "count" && <p className="field-hint">واحد: {unit}</p>}
+    </div>
+  );
+}
 
 function GoalForm({ initial, monthlyGoals, onSave }) {
   const categories = useContext(CategoriesContext);
@@ -1265,6 +1515,9 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
   const timeTarget = tHours * 60 + tMinutes;
   const targetValue = targetType === "count" ? countTarget : targetType === "time" ? timeTarget : null;
   const valid = title.trim() && (targetType === "simple" || (targetValue && targetValue > 0));
+  const parent = monthlyGoals && linkedMonthlyId ? monthlyGoals.find((g) => g.id === linkedMonthlyId) : null;
+  const willFeed = parent && isMeasurable(parent) && parent.targetType === targetType;
+  const unitClash = parent && isMeasurable(parent) && targetType !== "simple" && parent.targetType !== targetType;
 
   return (
     <div className="form">
@@ -1278,19 +1531,17 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
       <CategoryPicker value={category} onChange={setCategory} />
 
       <label className="field-label">نحوهٔ سنجش</label>
-      <div className="segmented">
-        <button className={targetType === "simple" ? "seg-active" : ""} onClick={() => setTargetType("simple")}>ساده</button>
-        <button className={targetType === "count" ? "seg-active" : ""} onClick={() => setTargetType("count")}>تعدادی</button>
-        <button className={targetType === "time" ? "seg-active" : ""} onClick={() => setTargetType("time")}>زمانی</button>
-      </div>
+      <Segmented options={[{ id: "simple", label: "ساده" }, { id: "count", label: "تعدادی" }, { id: "time", label: "زمانی" }]}
+        value={targetType} onChange={setTargetType} />
 
       {targetType === "count" && (
         <>
           <label className="field-label">مقدار هدف</label>
           <div className="big-stepper">
-            <button onClick={() => setCountTarget((v) => Math.max(1, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
-            <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={countTarget} onChange={(e) => setCountTarget(Math.max(1, Number(e.target.value) || 1))} />
-            <button onClick={() => setCountTarget((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
+            <button type="button" onClick={() => setCountTarget((v) => Math.max(1, v - 1))} aria-label="کم کردن"><Minus size={16} /></button>
+            <input className="text-input big-stepper-input" type="number" inputMode="numeric" value={countTarget}
+              onChange={(e) => setCountTarget(Math.max(1, Number(e.target.value) || 1))} onFocus={(e) => e.target.select()} />
+            <button type="button" onClick={() => setCountTarget((v) => v + 1)} aria-label="زیاد کردن"><Plus size={16} /></button>
           </div>
           <label className="field-label">واحد (اختیاری)</label>
           <input className="text-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً: صفحه، جلسه، بار" />
@@ -1311,10 +1562,12 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
             <option value="">بدون ارتباط</option>
             {monthlyGoals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
           </select>
+          {willFeed && <p className="field-hint field-hint-ok">هر پیشرفتی که اینجا ثبت کنی، به هدف ماهانه هم اضافه می‌شود.</p>}
+          {unitClash && <p className="field-hint field-hint-warn">واحد این هدف با هدف ماهانه یکی نیست، پس پیشرفت منتقل نمی‌شود. برای انتقال، هر دو باید «{parent.targetType === "time" ? "زمانی" : "تعدادی"}» باشند.</p>}
         </>
       )}
 
-      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> یادآوری روزانه (اختیاری)</label>
+      <label className="field-label"><Bell size={12} /> یادآوری روزانه (اختیاری)</label>
       <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
       <p className="field-hint">تا وقتی این هدف تمام نشده، هر روز در این ساعت یادآوری می‌شود.</p>
 
@@ -1342,16 +1595,12 @@ function TaskForm({ initial, goals, onSave }) {
     <div className="form">
       <label className="field-label">عنوان کار</label>
       <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: تماس با مشتری" autoFocus />
-
       <label className="field-label">توضیحات (اختیاری)</label>
       <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این کار" />
-
       <label className="field-label">دسته‌بندی</label>
       <CategoryPicker value={category} onChange={setCategory} />
-
-      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> ساعت یادآوری (اختیاری)</label>
+      <label className="field-label"><Bell size={12} /> ساعت یادآوری (اختیاری)</label>
       <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
-
       {goals.length > 0 && (
         <>
           <label className="field-label">مرتبط با هدف (اختیاری)</label>
@@ -1361,7 +1610,6 @@ function TaskForm({ initial, goals, onSave }) {
           </select>
         </>
       )}
-
       <button className="primary-btn" disabled={!title.trim()}
         onClick={() => title.trim() && onSave({
           title: title.trim(), description: description.trim() || null, category,
@@ -1378,7 +1626,17 @@ function HabitForm({ initial, onSave }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [description, setDescription] = useState(initial?.description || "");
   const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
+  const [metric, setMetric] = useState(initial?.metric || "simple");
+  const [unit, setUnit] = useState(initial?.unit || "");
+  const [dailyMin, setDailyMin] = useState(initial?.dailyMin ?? null);
+  const [dailyMax, setDailyMax] = useState(initial?.dailyMax ?? null);
+  const [weeklyMin, setWeeklyMin] = useState(initial?.weeklyMin ?? null);
+  const [weeklyMax, setWeeklyMax] = useState(initial?.weeklyMax ?? null);
   const [reminderTime, setReminderTime] = useState(initial?.reminderTime || "");
+
+  const boundsInvalid = (dailyMin != null && dailyMax != null && dailyMin > dailyMax)
+    || (weeklyMin != null && weeklyMax != null && weeklyMin > weeklyMax);
+
   return (
     <div className="form">
       <label className="field-label">عنوان عادت</label>
@@ -1387,11 +1645,46 @@ function HabitForm({ initial, onSave }) {
       <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="جزئیات بیشتر دربارهٔ این عادت" />
       <label className="field-label">دسته‌بندی</label>
       <CategoryPicker value={category} onChange={setCategory} />
-      <label className="field-label"><Bell size={12} style={{ verticalAlign: "-2px" }} /> یادآوری روزانه (اختیاری)</label>
+
+      <label className="field-label">نحوهٔ ثبت روزانه</label>
+      <Segmented options={HABIT_METRICS} value={metric} onChange={(v) => { setMetric(v); setDailyMin(null); setDailyMax(null); }} />
+
+      {metric === "count" && (
+        <>
+          <label className="field-label">واحد (اختیاری)</label>
+          <input className="text-input" value={unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً: لیوان، صفحه، نخ" />
+        </>
+      )}
+
+      {metric !== "simple" && (
+        <>
+          <label className="field-label">محدودهٔ روزانه</label>
+          <BoundInput label="حداقل روزانه" metric={metric} unit={unit} value={dailyMin} onChange={setDailyMin} />
+          <BoundInput label="حداکثر روزانه" metric={metric} unit={unit} value={dailyMax} onChange={setDailyMax} />
+          {dailyMax != null && dailyMin == null && (
+            <p className="field-hint">برای عادت‌های «کمتر از»، روزی که چیزی ثبت نکنی صفر حساب می‌شود و موفق است.</p>
+          )}
+        </>
+      )}
+
+      <label className="field-label">محدودهٔ هفتگی (روز)</label>
+      <BoundInput label="حداقل روز در هفته" metric="count" unit="روز" value={weeklyMin} onChange={(v) => setWeeklyMin(v == null ? null : Math.min(7, v))} />
+      <BoundInput label="حداکثر روز در هفته" metric="count" unit="روز" value={weeklyMax} onChange={(v) => setWeeklyMax(v == null ? null : Math.min(7, v))} />
+
+      {boundsInvalid && <p className="field-hint field-hint-warn">حداقل نمی‌تواند از حداکثر بزرگ‌تر باشد.</p>}
+
+      <label className="field-label"><Bell size={12} /> یادآوری روزانه (اختیاری)</label>
       <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
-      <p className="field-hint">هر روز در این ساعت یادآوری می‌شود، مگر آن روز را انجام داده باشی.</p>
-      <button className="primary-btn" disabled={!title.trim()}
-        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null, category, reminderTime: reminderTime || null })}>
+
+      <button className="primary-btn" disabled={!title.trim() || boundsInvalid}
+        onClick={() => title.trim() && !boundsInvalid && onSave({
+          title: title.trim(), description: description.trim() || null, category,
+          metric, unit: metric === "count" ? (unit.trim() || null) : null,
+          dailyMin: metric === "simple" ? null : dailyMin,
+          dailyMax: metric === "simple" ? null : dailyMax,
+          weeklyMin, weeklyMax,
+          reminderTime: reminderTime || null,
+        })}>
         ذخیره
       </button>
     </div>
@@ -1408,9 +1701,7 @@ function TrackerItemForm({ initial, onSave }) {
       <label className="field-label">عنوان</label>
       <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: نوشیدن آب" autoFocus />
       <label className="field-label">نوع ثبت</label>
-      <div className="segmented">
-        {TRACKER_TYPES.map((t) => <button key={t.id} className={type === t.id ? "seg-active" : ""} onClick={() => setType(t.id)}>{t.label}</button>)}
-      </div>
+      <Segmented options={TRACKER_TYPES} value={type} onChange={setType} />
       {type === "count" && (
         <>
           <label className="field-label">واحد (اختیاری)</label>
@@ -1430,14 +1721,20 @@ function TrackerItemForm({ initial, onSave }) {
 function GroupForm({ initial, onSave }) {
   const [title, setTitle] = useState(initial?.title || "");
   const [description, setDescription] = useState(initial?.description || "");
+  const [period, setPeriod] = useState(initial?.period || "daily");
   return (
     <div className="form">
       <label className="field-label">عنوان گروه</label>
       <input className="text-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثلاً: سلامت روزانه" autoFocus />
+      <label className="field-label">دورهٔ ثبت</label>
+      <Segmented options={GROUP_PERIODS} value={period} onChange={setPeriod} />
+      <p className="field-hint">{period === "monthly"
+        ? "ثبت‌ها به ماه شمسی نسبت داده می‌شوند و خلاصه برای همان ماه محاسبه می‌شود."
+        : "ثبت‌ها به روز نسبت داده می‌شوند و خلاصه برای ۷ روز اخیر محاسبه می‌شود."}</p>
       <label className="field-label">توضیحات (اختیاری)</label>
       <textarea className="note-area note-area-sm" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="این گروه برای چیست؟" />
       <button className="primary-btn" disabled={!title.trim()}
-        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null })}>
+        onClick={() => title.trim() && onSave({ title: title.trim(), description: description.trim() || null, period })}>
         ذخیره
       </button>
     </div>
@@ -1445,19 +1742,19 @@ function GroupForm({ initial, onSave }) {
 }
 
 /* =========================================================================
-   DASHBOARD TAB
+   DASHBOARD
    ========================================================================= */
 
-function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, setTab, openDetail, overdueTasks, overdueGoals, rolloverTasks, rolloverGoals }) {
+function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, setTab, openDetail,
+  overdueTasks, overdueGoals, rolloverTasks, rolloverGoals }) {
   const tKey = dateKey(today.jy, today.jm, today.jd);
   const todaysTasks = tasks.filter((t) => t.dateKey === tKey);
   const doneTasks = todaysTasks.filter((t) => t.completed).length;
-  const doneHabits = habits.filter((h) => h.completions[tKey]).length;
+  const doneHabits = habits.filter((h) => habitDaySuccess(h, tKey)).length;
 
   const mKey = monthKey(today.jy, today.jm);
   const monthlyGoals = goals.filter((g) => g.type === "monthly" && g.monthKey === mKey);
   const monthDone = monthlyGoals.filter((g) => g.completed).length;
-
   const weekStart = getWeekStart(today.jy, today.jm, today.jd);
   const wKey = dateKey(weekStart.jy, weekStart.jm, weekStart.jd);
   const weeklyGoals = goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
@@ -1469,37 +1766,36 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
       <RolloverBanner count={overdueGoals.length} label="هدف ناتمام از بازه‌های گذشته" onRollover={rolloverGoals} />
 
       <div className="stat-row">
-        <div className="stat-card"><span className="stat-num">{toFa(doneTasks)}/{toFa(todaysTasks.length)}</span><span className="stat-label">وظیفه امروز</span></div>
-        <div className="stat-card"><span className="stat-num">{toFa(doneHabits)}/{toFa(habits.length)}</span><span className="stat-label">عادت امروز</span></div>
-        <div className="stat-card"><span className="stat-num">{toFa(monthDone)}/{toFa(monthlyGoals.length)}</span><span className="stat-label">هدف این ماه</span></div>
+        <div className="stat-card"><span className="stat-num">{toFa(doneTasks)}<span className="stat-of">/{toFa(todaysTasks.length)}</span></span><span className="stat-label">وظیفه امروز</span></div>
+        <div className="stat-card"><span className="stat-num">{toFa(doneHabits)}<span className="stat-of">/{toFa(habits.length)}</span></span><span className="stat-label">عادت امروز</span></div>
+        <div className="stat-card"><span className="stat-num">{toFa(monthDone)}<span className="stat-of">/{toFa(monthlyGoals.length)}</span></span><span className="stat-label">هدف این ماه</span></div>
       </div>
 
       <section className="section">
         <div className="section-head"><h3>وظایف امروز</h3><button className="link-btn" onClick={() => setTab("tasks")}>مشاهده همه</button></div>
-        {todaysTasks.length === 0 ? (
-          <EmptyState text="امروز کاری ثبت نشده" sub="از تب وظایف یکی اضافه کن" />
-        ) : (
-          <ul className="list">
-            {todaysTasks.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}
-          </ul>
+        {todaysTasks.length === 0 ? <EmptyState text="امروز کاری ثبت نشده" sub="از تب وظایف یکی اضافه کن" /> : (
+          <ul className="list">{todaysTasks.slice(0, 5).map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}</ul>
         )}
       </section>
 
       <section className="section">
         <div className="section-head"><h3>عادت‌های امروز</h3><button className="link-btn" onClick={() => setTab("habits")}>مشاهده همه</button></div>
-        {habits.length === 0 ? (
-          <EmptyState text="هنوز عادتی ثبت نشده" sub="از تب عادت‌ها یکی اضافه کن" />
-        ) : (
+        {habits.length === 0 ? <EmptyState text="هنوز عادتی ثبت نشده" sub="از تب عادت‌ها یکی اضافه کن" /> : (
           <ul className="list">
             {habits.slice(0, 5).map((h) => {
-              const done = !!h.completions[tKey];
+              const ok = habitDaySuccess(h, tKey);
               return (
                 <li key={h.id} className="list-row">
-                  <button className={"check-circle" + (done ? " check-circle-done" : "")} onClick={() => toggleHabit(h.id, tKey)} aria-label="تغییر وضعیت">
-                    {done && <Check size={13} strokeWidth={3} />}
-                  </button>
+                  <CategoryEdge id={h.category} />
+                  {habitMeasured(h) ? (
+                    <span className={"status-dot" + (ok ? " status-dot-ok" : "")}>{ok && <Check size={12} strokeWidth={3} />}</span>
+                  ) : (
+                    <button className={"check-circle" + (ok ? " check-circle-done" : "")} onClick={() => toggleHabit(h.id, tKey)} aria-label="تغییر وضعیت">
+                      {ok && <Check size={13} strokeWidth={3} />}
+                    </button>
+                  )}
                   <button className="row-body" onClick={() => openDetail({ kind: "habit", id: h.id })}>
-                    <span className={"list-text" + (done ? " list-text-done" : "")}>{h.title}</span>
+                    <span className={"list-text" + (ok && !habitMeasured(h) ? " list-text-done" : "")}>{h.title}</span>
                   </button>
                   <CategoryChip id={h.category} />
                 </li>
@@ -1557,25 +1853,11 @@ function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals,
     if (mode === "monthly") setCursor({ ...addMonthsJalali(cursor.jy, cursor.jm, 1), jd: 1 });
     else setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, 7));
   }
-  function handleSave(data) {
-    addGoal({
-      id: uid(), ...data, type: mode,
-      monthKey: mode === "monthly" ? mKey : null,
-      weekKey: mode === "weekly" ? wKey : null,
-      linkedMonthlyId: mode === "weekly" ? data.linkedMonthlyId : null,
-      completed: false, progressEntries: [], rolloverCount: 0, lastReminderKey: null,
-    });
-    setSheetOpen(false);
-  }
 
   return (
     <div className="tab-pane">
       <RolloverBanner count={overdueGoals.length} label="هدف ناتمام از بازه‌های گذشته" onRollover={rolloverGoals} />
-
-      <div className="segmented">
-        <button className={mode === "monthly" ? "seg-active" : ""} onClick={() => setMode("monthly")}>ماهانه</button>
-        <button className={mode === "weekly" ? "seg-active" : ""} onClick={() => setMode("weekly")}>هفتگی</button>
-      </div>
+      <Segmented options={[{ id: "monthly", label: "ماهانه" }, { id: "weekly", label: "هفتگی" }]} value={mode} onChange={setMode} />
 
       <div className="period-nav">
         <IconBtn onClick={goPrev} label="قبلی"><ChevronRight size={18} /></IconBtn>
@@ -1590,14 +1872,27 @@ function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals,
       ) : (
         <ul className="list">
           {shown.map((g) => (
-            <GoalRow key={g.id} goal={g} linkedTitle={g.linkedMonthlyId ? goals.find((m) => m.id === g.linkedMonthlyId)?.title : null} onToggle={toggleGoal} onOpen={openDetail} />
+            <GoalRow key={g.id} goal={g} total={goalTotal(g, goals)}
+              linkedTitle={g.linkedMonthlyId ? goals.find((m) => m.id === g.linkedMonthlyId)?.title : null}
+              feedsCount={g.type === "monthly" ? goals.filter((x) => x.linkedMonthlyId === g.id && x.targetType === g.targetType).length : 0}
+              onToggle={toggleGoal} onOpen={openDetail} />
           ))}
         </ul>
       )}
 
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن هدف"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={mode === "monthly" ? "هدف ماهانهٔ جدید" : "هدف هفتگی جدید"}>
-        <GoalForm monthlyGoals={mode === "weekly" ? allMonthlyGoals : null} onSave={handleSave} />
+        <GoalForm monthlyGoals={mode === "weekly" ? allMonthlyGoals : null}
+          onSave={(data) => {
+            addGoal({
+              id: uid(), ...data, type: mode,
+              monthKey: mode === "monthly" ? mKey : null,
+              weekKey: mode === "weekly" ? wKey : null,
+              linkedMonthlyId: mode === "weekly" ? data.linkedMonthlyId : null,
+              completed: false, progressEntries: [], rolloverCount: 0, lastReminderKey: null,
+            });
+            setSheetOpen(false);
+          }} />
       </Sheet>
     </div>
   );
@@ -1610,25 +1905,21 @@ function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals,
 function TasksTab({ today, tasks, goals, addTask, toggleTask, openDetail, overdueTasks, rolloverTasks }) {
   const [cursor, setCursor] = useState(today);
   const [sheetOpen, setSheetOpen] = useState(false);
-
   const strip = useMemo(() => {
     const start = addDaysJalali(cursor.jy, cursor.jm, cursor.jd, -3);
     return Array.from({ length: 7 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
   }, [cursor.jy, cursor.jm, cursor.jd]);
-
   const cKey = dateKey(cursor.jy, cursor.jm, cursor.jd);
   const dayTasks = tasks.filter((t) => t.dateKey === cKey);
 
   return (
     <div className="tab-pane">
       <RolloverBanner count={overdueTasks.length} label="کار انجام‌نشده از روزهای گذشته" onRollover={rolloverTasks} />
-
       <div className="period-nav">
         <IconBtn onClick={() => setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, -1))} label="روز قبل"><ChevronRight size={18} /></IconBtn>
         <span className="period-label">{PERSIAN_WEEKDAYS[persianWeekdayIndex(cursor.jy, cursor.jm, cursor.jd)]}، {toFa(cursor.jd)} {PERSIAN_MONTHS[cursor.jm - 1]}</span>
         <IconBtn onClick={() => setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, 1))} label="روز بعد"><ChevronLeft size={18} /></IconBtn>
       </div>
-
       <div className="day-strip">
         {strip.map((d) => {
           const isToday = sameDate(d, today);
@@ -1641,17 +1932,10 @@ function TasksTab({ today, tasks, goals, addTask, toggleTask, openDetail, overdu
           );
         })}
       </div>
-
       {!sameDate(cursor, today) && <button className="link-btn today-jump" onClick={() => setCursor(today)}>برو به امروز</button>}
-
-      {dayTasks.length === 0 ? (
-        <EmptyState text="کاری برای این روز ثبت نشده" sub="با دکمهٔ زیر یکی اضافه کن" />
-      ) : (
-        <ul className="list">
-          {dayTasks.map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}
-        </ul>
+      {dayTasks.length === 0 ? <EmptyState text="کاری برای این روز ثبت نشده" sub="با دکمهٔ زیر یکی اضافه کن" /> : (
+        <ul className="list">{dayTasks.map((t) => <TaskRow key={t.id} task={t} onToggle={toggleTask} onOpen={openDetail} />)}</ul>
       )}
-
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن کار"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="کار جدید">
         <TaskForm goals={goals} onSave={(data) => {
@@ -1667,21 +1951,32 @@ function TasksTab({ today, tasks, goals, addTask, toggleTask, openDetail, overdu
    HABITS TAB
    ========================================================================= */
 
-function HabitsTab({ today, habits, addHabit, toggleHabit, openDetail }) {
+function HabitsTab({ today, habits, addHabit, toggleHabit, setHabitValue, openDetail }) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [amountTarget, setAmountTarget] = useState(null);
+  const tKey = dateKey(today.jy, today.jm, today.jd);
   return (
     <div className="tab-pane">
-      {habits.length === 0 ? (
-        <EmptyState text="هنوز عادتی ثبت نشده" sub="یک عادت روزانه برای ردیابی اضافه کن" />
-      ) : (
+      {habits.length === 0 ? <EmptyState text="هنوز عادتی ثبت نشده" sub="یک عادت روزانه برای ردیابی اضافه کن" /> : (
         <ul className="list">
-          {habits.map((h) => <HabitRow key={h.id} habit={h} today={today} onToggle={toggleHabit} onOpen={openDetail} />)}
+          {habits.map((h) => (
+            <HabitRow key={h.id} habit={h} today={today} onToggle={toggleHabit} onSetValue={setHabitValue}
+              onOpen={openDetail} onOpenAmount={(habit, value) => setAmountTarget({ habit, value })} />
+          ))}
         </ul>
       )}
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن عادت"><Plus size={22} /></button>
       <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="عادت جدید">
-        <HabitForm onSave={(data) => { addHabit({ id: uid(), ...data, completions: {}, lastReminderKey: null }); setSheetOpen(false); }} />
+        <HabitForm onSave={(data) => { addHabit({ id: uid(), ...data, entries: {}, lastReminderKey: null }); setSheetOpen(false); }} />
       </Sheet>
+      {amountTarget && (
+        <AmountSheet
+          open={true} onClose={() => setAmountTarget(null)} title={`ثبت مقدار — ${amountTarget.habit.title}`}
+          type={amountTarget.habit.metric} unit={amountTarget.habit.unit} currentValue={amountTarget.value}
+          periodMode="daily" today={today} initialPeriod={tKey} addLabel="افزودن به مقدار روز"
+          onAdd={(v, _n, dk) => setHabitValue(amountTarget.habit.id, dk || tKey, habitDayValue(amountTarget.habit, dk || tKey) + v)}
+          onSet={(v, _n, dk) => setHabitValue(amountTarget.habit.id, dk || tKey, v)} />
+      )}
     </div>
   );
 }
@@ -1690,12 +1985,13 @@ function HabitsTab({ today, habits, addHabit, toggleHabit, openDetail }) {
    TRACKER TAB
    ========================================================================= */
 
-const TrackerItemRow = memo(function TrackerItemRow({ item, value, note, onToggleBool, onQuickAdd, onOpen, onOpenAmount }) {
+const TrackerItemRow = memo(function TrackerItemRow({ item, value, notes, onToggleBool, onQuickAdd, onOpen, onOpenAmount }) {
   return (
     <li className="tracker-row">
       <button className="row-body" onClick={() => onOpen({ kind: "tracker", id: item.id })}>
         <span className="list-text">{item.title}</span>
-        {note ? <span className="row-desc row-desc-note"><FileText size={10} /> {note}</span>
+        {notes.length > 0
+          ? <span className="row-notes">{notes.map((n, i) => <span key={i} className="row-note-line"><FileText size={9} /> {n}</span>)}</span>
           : item.description ? <span className="row-desc">{item.description}</span> : null}
       </button>
       {item.type === "boolean" && (
@@ -1717,22 +2013,47 @@ const TrackerItemRow = memo(function TrackerItemRow({ item, value, note, onToggl
   );
 });
 
-function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDetail, onAddItem, onEditGroup, onDeleteGroup, onOpenAmount }) {
-  const todayKey = dateKey(today.jy, today.jm, today.jd);
-  const last7 = useMemo(() => {
-    const start = addDaysJalali(today.jy, today.jm, today.jd, -6);
-    return Array.from({ length: 7 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
-  }, [todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+function TrackerGroupCard({ group, items, entries, today, onAddEntry, onQuickAdd, onToggleBool,
+  onOpenDetail, onAddItem, onEditGroup, onDeleteGroup, onArchiveGroup, onOpenAmount }) {
+  const monthly = group.period === "monthly";
+  const [cursor, setCursor] = useState(today);
+  const periodKey = groupPeriodKey(group, cursor);
+  const isCurrent = periodKey === groupPeriodKey(group, today);
+
+  const summarySpan = useMemo(() => {
+    if (monthly) return [periodKey];
+    const start = addDaysJalali(cursor.jy, cursor.jm, cursor.jd, -6);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDaysJalali(start.jy, start.jm, start.jd, i);
+      return dateKey(d.jy, d.jm, d.jd);
+    });
+  }, [monthly, periodKey, cursor.jy, cursor.jm, cursor.jd]);
+
+  function shift(dir) {
+    setCursor(monthly ? { ...addMonthsJalali(cursor.jy, cursor.jm, dir), jd: 1 } : addDaysJalali(cursor.jy, cursor.jm, cursor.jd, dir));
+  }
 
   return (
-    <div className="group-card">
+    <div className={"group-card" + (group.archived ? " group-card-archived" : "")}>
       <div className="group-card-head">
         <div className="group-card-titles">
-          <h4>{group.title}</h4>
+          <h4>{group.title}
+            <span className="group-period-tag">{monthly ? <><CalendarIcon size={10} /> ماهانه</> : "روزانه"}</span>
+            {group.archived && <span className="archived-badge">آرشیو</span>}
+          </h4>
           {group.description && <span className="row-desc">{group.description}</span>}
         </div>
+        <IconBtn onClick={() => onArchiveGroup(group.id)} label={group.archived ? "بازگردانی گروه" : "آرشیو گروه"}>
+          {group.archived ? <RotateBack size={14} /> : <Archive size={14} />}
+        </IconBtn>
         <IconBtn onClick={() => onEditGroup(group)} label="ویرایش گروه"><Pencil size={14} /></IconBtn>
         <IconBtn onClick={() => onDeleteGroup(group.id)} label="حذف گروه"><Trash2 size={15} /></IconBtn>
+      </div>
+
+      <div className="period-nav period-nav-sm">
+        <IconBtn onClick={() => shift(-1)} label="قبلی"><ChevronRight size={16} /></IconBtn>
+        <span className="period-label-sm">{formatPeriodKey(periodKey)}{isCurrent ? (monthly ? " (این ماه)" : " (امروز)") : ""}</span>
+        <IconBtn onClick={() => shift(1)} label="بعدی"><ChevronLeft size={16} /></IconBtn>
       </div>
 
       {items.length === 0 ? (
@@ -1741,32 +2062,30 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDe
         <>
           <ul className="list">
             {items.map((item) => {
-              const value = trackerValue(trackerLogs, item.id, todayKey, item.type);
-              const note = trackerNote(trackerLogs, item.id, todayKey);
+              const value = periodTotal(entries, item, periodKey);
+              const notes = entriesForPeriod(entries, item.id, periodKey).filter((e) => e.note).map((e) => e.note);
               return (
-                <TrackerItemRow
-                  key={item.id} item={item} value={value} note={note}
-                  onToggleBool={(v) => onSetLog(item.id, todayKey, v, note)}
-                  onQuickAdd={(d) => onSetLog(item.id, todayKey, Math.max(0, value + d), note)}
+                <TrackerItemRow key={item.id} item={item} value={value} notes={notes}
+                  onToggleBool={(v) => onToggleBool(item, periodKey, v)}
+                  onQuickAdd={(d) => onQuickAdd(item, periodKey, d)}
                   onOpen={onOpenDetail}
-                  onOpenAmount={() => onOpenAmount(item, value, note)}
-                />
+                  onOpenAmount={() => onOpenAmount(item, periodKey, value, monthly)} />
               );
             })}
           </ul>
 
           <div className="group-summary">
-            <div className="group-summary-title">نتیجه و خلاصه (۷ روز اخیر)</div>
+            <div className="group-summary-title">{monthly ? `خلاصهٔ ${formatPeriodKey(periodKey)}` : "نتیجه و خلاصه (۷ روز اخیر)"}</div>
             {items.map((item) => {
               let text;
               if (item.type === "boolean") {
-                const doneCount = last7.filter((d) => trackerValue(trackerLogs, item.id, dateKey(d.jy, d.jm, d.jd), "boolean")).length;
-                text = `${toFa(doneCount)} از ${toFa(7)} روز`;
+                const doneCount = summarySpan.filter((pk) => periodTotal(entries, item, pk)).length;
+                text = monthly ? (doneCount ? "انجام شده" : "انجام نشده") : `${toFa(doneCount)} از ${toFa(7)} روز`;
               } else {
-                const total = last7.reduce((s, d) => s + trackerValue(trackerLogs, item.id, dateKey(d.jy, d.jm, d.jd), item.type), 0);
+                const total = summarySpan.reduce((s, pk) => s + periodTotal(entries, item, pk), 0);
                 text = item.type === "time"
                   ? `مجموع ${formatMinutes(total)}`
-                  : `مجموع ${toFa(total)}${item.unit ? " " + item.unit : ""} · میانگین ${toFa(Math.round(total / 7))}`;
+                  : `مجموع ${toFa(total)}${item.unit ? " " + item.unit : ""}` + (monthly ? "" : ` · میانگین ${toFa(Math.round(total / 7))}`);
               }
               return <div key={item.id} className="group-summary-row"><span>{item.title}</span><span className="group-summary-val">{text}</span></div>;
             })}
@@ -1779,58 +2098,59 @@ function TrackerGroupCard({ group, items, trackerLogs, today, onSetLog, onOpenDe
   );
 }
 
-function TrackerTab({ today, trackerGroups, trackerItems, trackerLogs, addGroup, editGroup, deleteGroup, addItem, setLog, openDetail }) {
+function TrackerTab({ today, trackerGroups, trackerItems, trackerEntries, addGroup, editGroup, deleteGroup,
+  archiveGroup, addItem, addEntry, quickAdd, toggleBool, openDetail }) {
   const [groupSheetOpen, setGroupSheetOpen] = useState(false);
   const [editingGroup, setEditingGroup] = useState(null);
   const [itemSheetGroupId, setItemSheetGroupId] = useState(null);
   const [amountTarget, setAmountTarget] = useState(null);
-  const todayKey = dateKey(today.jy, today.jm, today.jd);
+  const [showArchive, setShowArchive] = useState(false);
+
+  const visibleGroups = trackerGroups.filter((g) => !!g.archived === showArchive);
+  const archivedCount = trackerGroups.filter((g) => g.archived).length
+    + trackerItems.filter((i) => i.archived && !trackerGroups.find((g) => g.id === i.groupId)?.archived).length;
 
   return (
     <div className="tab-pane">
-      {trackerGroups.length === 0 ? (
-        <EmptyState text="هنوز گروهی ثبت نشده" sub="یک گروه بساز و موردهایی برای ردیابی اضافه کن" />
+      {(archivedCount > 0 || showArchive) && (
+        <button className={"archive-toggle" + (showArchive ? " archive-toggle-on" : "")} onClick={() => setShowArchive((v) => !v)}>
+          {showArchive ? <><RotateBack size={14} /> بازگشت به فهرست اصلی</> : <><Archive size={14} /> آرشیو ({toFa(archivedCount)})</>}
+        </button>
+      )}
+
+      {visibleGroups.length === 0 ? (
+        <EmptyState text={showArchive ? "آرشیو خالی است" : "هنوز گروهی ثبت نشده"} sub={showArchive ? "" : "یک گروه بساز و موردهایی برای ردیابی اضافه کن"} />
       ) : (
-        trackerGroups.map((g) => (
-          <TrackerGroupCard
-            key={g.id} group={g} items={trackerItems.filter((it) => it.groupId === g.id)}
-            trackerLogs={trackerLogs} today={today}
-            onSetLog={setLog} onOpenDetail={openDetail} onAddItem={setItemSheetGroupId}
-            onEditGroup={setEditingGroup} onDeleteGroup={deleteGroup}
-            onOpenAmount={(item, value, note) => setAmountTarget({ item, value, note })}
-          />
+        visibleGroups.map((g) => (
+          <TrackerGroupCard key={g.id} group={g}
+            items={trackerItems.filter((it) => it.groupId === g.id && (!!it.archived === showArchive || g.archived))}
+            entries={trackerEntries} today={today}
+            onAddEntry={addEntry} onQuickAdd={quickAdd} onToggleBool={toggleBool}
+            onOpenDetail={openDetail} onAddItem={setItemSheetGroupId}
+            onEditGroup={setEditingGroup} onDeleteGroup={deleteGroup} onArchiveGroup={archiveGroup}
+            onOpenAmount={(item, periodKey, value, monthly) => setAmountTarget({ item, periodKey, value, monthly })} />
         ))
       )}
 
-      <button className="fab" onClick={() => setGroupSheetOpen(true)} aria-label="افزودن گروه"><Plus size={22} /></button>
+      {!showArchive && <button className="fab" onClick={() => setGroupSheetOpen(true)} aria-label="افزودن گروه"><Plus size={22} /></button>}
 
       <Sheet open={groupSheetOpen} onClose={() => setGroupSheetOpen(false)} title="گروه جدید">
-        <GroupForm onSave={(data) => { addGroup({ id: uid(), ...data }); setGroupSheetOpen(false); }} />
+        <GroupForm onSave={(data) => { addGroup({ id: uid(), ...data, archived: false }); setGroupSheetOpen(false); }} />
       </Sheet>
-
       <Sheet open={!!editingGroup} onClose={() => setEditingGroup(null)} title="ویرایش گروه">
         {editingGroup && <GroupForm initial={editingGroup} onSave={(data) => { editGroup(editingGroup.id, data); setEditingGroup(null); }} />}
       </Sheet>
-
       <Sheet open={!!itemSheetGroupId} onClose={() => setItemSheetGroupId(null)} title="مورد جدید">
-        <TrackerItemForm onSave={(data) => { addItem({ id: uid(), groupId: itemSheetGroupId, ...data }); setItemSheetGroupId(null); }} />
+        <TrackerItemForm onSave={(data) => { addItem({ id: uid(), groupId: itemSheetGroupId, ...data, archived: false }); setItemSheetGroupId(null); }} />
       </Sheet>
 
-      {amountTarget && amountTarget.item.type === "time" && (
-        <DurationSheet
-          open={true} onClose={() => setAmountTarget(null)} title={`ثبت زمان — ${amountTarget.item.title}`}
-          currentMinutes={amountTarget.value} withNote initialNote={amountTarget.note || ""}
-          onAdd={(mins, note) => setLog(amountTarget.item.id, todayKey, amountTarget.value + mins, note)}
-          onSet={(mins, note) => setLog(amountTarget.item.id, todayKey, mins, note)}
-        />
-      )}
-      {amountTarget && amountTarget.item.type === "count" && (
-        <CountSheet
-          open={true} onClose={() => setAmountTarget(null)} title={`ثبت مقدار — ${amountTarget.item.title}`}
-          unit={amountTarget.item.unit} currentValue={amountTarget.value} withNote initialNote={amountTarget.note || ""}
-          onAdd={(v, note) => setLog(amountTarget.item.id, todayKey, amountTarget.value + v, note)}
-          onSet={(v, note) => setLog(amountTarget.item.id, todayKey, v, note)}
-        />
+      {amountTarget && (
+        <AmountSheet
+          open={true} onClose={() => setAmountTarget(null)} title={`ثبت — ${amountTarget.item.title}`}
+          type={amountTarget.item.type} unit={amountTarget.item.unit} currentValue={amountTarget.value}
+          withNote periodMode={amountTarget.monthly ? "monthly" : "daily"} today={today}
+          initialPeriod={amountTarget.periodKey} addLabel="ثبت"
+          onAdd={(v, note, pk) => addEntry(amountTarget.item.id, pk || amountTarget.periodKey, v, note)} />
       )}
     </div>
   );
@@ -1950,246 +2270,319 @@ function ReviewTab({ today, tasks, goals, notes, reviews, saveNote, addReview, d
 }
 /* =========================================================================
    STYLES
+   Light and dark share one variable contract; only the values change.
+   "auto" follows the OS via prefers-color-scheme.
    ========================================================================= */
 
 const APP_CSS = `
   .app-root, .app-root * { box-sizing: border-box; }
   .app-root {
-    --c-bg: #F7F7F5; --c-surface: #FFFFFF; --c-ink: #1C1D21; --c-ink-soft: #6B6D76; --c-ink-faint: #ADAFB6;
-    --c-primary: #2A4374; --c-primary-soft: #E8ECF5;
-    --c-saffron: #C1862F; --c-saffron-soft: #F5EBDA;
-    --c-success: #3E7C6B; --c-success-soft: #E3F0EC;
-    --c-plum: #7A4B6B; --c-plum-soft: #F1E7EE;
-    --c-danger: #B5533C; --c-danger-soft: #F6E6E1;
-    --c-border: #E6E4DF; --c-border-soft: #F0EFEB;
-    --c-spring: #3E7C6B; --c-spring-soft: #DCEAE5;
-    --c-summer: #C1862F; --c-summer-soft: #F1E3C9;
-    --c-autumn: #A9673A; --c-autumn-soft: #EEDDCE;
+    --c-bg: #F6F5F2;
+    --c-surface: #FFFFFF;
+    --c-surface-2: #FBFAF8;
+    --c-ink: #1A1B1F;
+    --c-ink-soft: #62656E;
+    --c-ink-faint: #A2A5AD;
+    --c-border: #E4E2DC;
+    --c-border-soft: #EFEDE8;
+    --c-track: #ECEAE4;
+    --c-primary: #2A4374;   --c-primary-soft: #E7ECF6;
+    --c-saffron: #B37C28;   --c-saffron-soft: #F6EBD8;
+    --c-success: #35705F;   --c-success-soft: #E1EFEA;
+    --c-plum:    #744565; --c-plum-soft: #F1E7EE;
+    --c-danger:  #AC4C36;   --c-danger-soft: #F7E7E2;
+    --c-spring: #35705F; --c-spring-soft: #DCEAE5;
+    --c-summer: #B37C28; --c-summer-soft: #F2E4CB;
+    --c-autumn: #A05F32; --c-autumn-soft: #EFDDCE;
     --c-winter: #2A4374; --c-winter-soft: #DEE3EE;
+    --shadow-sm: 0 1px 2px rgba(26,27,31,0.04);
+    --shadow-md: 0 2px 10px rgba(26,27,31,0.07);
+    --shadow-lg: 0 -6px 28px rgba(26,27,31,0.16);
+
     font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
     background: var(--c-bg); color: var(--c-ink);
     max-width: 460px; margin: 0 auto; min-height: 100vh; position: relative;
     display: flex; flex-direction: column;
+    letter-spacing: -0.01em;
   }
-  @import url('https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap');
-  .app-root button { font-family: inherit; cursor: pointer; }
+
+  .app-root.theme-dark,
+  .app-root.theme-auto.is-dark {
+    --c-bg: #131519;
+    --c-surface: #1B1E24;
+    --c-surface-2: #21242B;
+    --c-ink: #E9EAED;
+    --c-ink-soft: #9BA0AA;
+    --c-ink-faint: #6A6F79;
+    --c-border: #2C3038;
+    --c-border-soft: #23262D;
+    --c-track: #2A2E36;
+    --c-primary: #8AA7DF;   --c-primary-soft: #22304C;
+    --c-saffron: #DBA55A;   --c-saffron-soft: #3A2E19;
+    --c-success: #6DBFA4;   --c-success-soft: #1D332C;
+    --c-plum:    #C08BB0;   --c-plum-soft: #33232E;
+    --c-danger:  #E08A76;   --c-danger-soft: #3B2520;
+    --c-spring: #6DBFA4; --c-spring-soft: #1D332C;
+    --c-summer: #DBA55A; --c-summer-soft: #3A2E19;
+    --c-autumn: #CE8A5C; --c-autumn-soft: #3A2A20;
+    --c-winter: #8AA7DF; --c-winter-soft: #22304C;
+    --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
+    --shadow-md: 0 2px 12px rgba(0,0,0,0.35);
+    --shadow-lg: 0 -6px 30px rgba(0,0,0,0.5);
+    color-scheme: dark;
+  }
+
+  .app-root button { font-family: inherit; cursor: pointer; color: inherit; }
   .app-root :focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
-  .app-root input, .app-root select, .app-root textarea { font-family: inherit; }
+  .app-root input, .app-root select, .app-root textarea { font-family: inherit; color: var(--c-ink); }
 
-  .app-header { padding: 18px 18px 14px; background: var(--c-surface); border-bottom: 1px solid var(--c-border-soft); position: sticky; top: 0; z-index: 10; }
-  .app-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
-  .app-wordmark { font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
-  .header-right-group { display: flex; align-items: center; gap: 8px; }
-  .app-header-date { font-size: 12px; color: var(--c-ink-soft); font-weight: 500; }
+  /* ---- header ---- */
+  .app-header { padding: 16px 18px 13px; background: var(--c-surface); border-bottom: 1px solid var(--c-border-soft); position: sticky; top: 0; z-index: 10; }
+  .app-header-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+  .app-wordmark { font-size: 19px; font-weight: 800; letter-spacing: -0.03em; }
+  .header-right-group { display: flex; align-items: center; gap: 6px; }
+  .app-header-date { font-size: 11.5px; color: var(--c-ink-soft); font-weight: 500; }
 
-  .season-ring-wrap { display: flex; flex-direction: column; gap: 6px; }
-  .season-ring { display: flex; gap: 6px; }
+  .season-ring-wrap { display: flex; flex-direction: column; gap: 7px; }
+  .season-ring { display: flex; gap: 7px; }
   .season-group { display: flex; gap: 2px; flex: 1; }
-  .season-seg { position: relative; flex: 1; height: 7px; border-radius: 4px; overflow: hidden; }
-  .season-seg-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-radius: 4px; transition: width .3s ease; }
-  .season-ring-label { font-size: 12px; color: var(--c-ink-soft); display: flex; align-items: center; gap: 6px; }
+  .season-seg { position: relative; flex: 1; height: 6px; border-radius: 3px; overflow: hidden; }
+  .season-seg-fill { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; border-radius: 3px; transition: width .3s ease; }
+  .season-ring-label { font-size: 11.5px; color: var(--c-ink-soft); display: flex; align-items: center; gap: 6px; }
   .season-ring-label .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--c-ink-faint); }
 
-  .tab-pane { padding: 16px 16px 90px; flex: 1; }
+  .tab-pane { padding: 16px 16px 96px; flex: 1; }
 
-  .rollover-banner { display: flex; align-items: center; gap: 8px; background: var(--c-saffron-soft); border: 1px solid #E3CFA8; color: #7A5416; border-radius: 12px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
+  /* ---- banners & stats ---- */
+  .rollover-banner { display: flex; align-items: center; gap: 8px; background: var(--c-saffron-soft); border: 1px solid var(--c-saffron); color: var(--c-saffron); border-radius: 13px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
   .rollover-banner span { flex: 1; }
-  .rollover-banner button { border: none; background: var(--c-saffron); color: #fff; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; }
+  .rollover-banner button { border: none; background: var(--c-saffron); color: var(--c-surface); border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 700; }
 
-  .stat-row { display: flex; gap: 10px; margin-bottom: 20px; }
-  .stat-card { flex: 1; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
-  .stat-num { font-size: 19px; font-weight: 800; color: var(--c-primary); }
-  .stat-label { font-size: 11px; color: var(--c-ink-soft); }
+  .stat-row { display: flex; gap: 9px; margin-bottom: 22px; }
+  .stat-card { flex: 1; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 15px; padding: 13px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; box-shadow: var(--shadow-sm); }
+  .stat-num { font-size: 21px; font-weight: 800; color: var(--c-primary); letter-spacing: -0.03em; }
+  .stat-of { font-size: 13px; font-weight: 600; color: var(--c-ink-faint); }
+  .stat-label { font-size: 10.5px; color: var(--c-ink-soft); }
 
-  .section { margin-bottom: 22px; }
-  .section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .section-head h3 { font-size: 14px; font-weight: 700; margin: 0; }
+  .section { margin-bottom: 24px; }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 11px; }
+  .section-head h3 { font-size: 14.5px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
   .link-btn { background: none; border: none; color: var(--c-primary); font-size: 12px; font-weight: 600; padding: 0; }
 
-  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
-  .list-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; }
-  .row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; background: none; border: none; padding: 0; text-align: start; font-family: inherit; color: inherit; }
-  .list-text { font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .list-text-done { text-decoration: line-through; color: var(--c-ink-faint); }
+  /* ---- rows ---- */
+  .list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .list-row, .tracker-row { position: relative; display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 13px; padding: 11px 12px; overflow: hidden; box-shadow: var(--shadow-sm); }
+  .cat-edge { position: absolute; inset-inline-start: 0; top: 0; bottom: 0; width: 3px; }
+  .list-row > .cat-edge ~ * { position: relative; }
+  .row-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; background: none; border: none; padding: 0; text-align: start; }
+  .list-text { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.01em; }
+  .list-text-done { text-decoration: line-through; color: var(--c-ink-faint); font-weight: 500; }
   .row-desc { font-size: 10.5px; color: var(--c-ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .goal-linked { font-size: 10.5px; color: var(--c-ink-faint); }
-  .row-progress { display: flex; align-items: center; gap: 7px; margin-top: 3px; }
+  .row-notes { display: flex; flex-direction: column; gap: 2px; }
+  .row-note-line { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-soft); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .goal-linked { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-faint); }
+  .row-progress { display: flex; align-items: center; gap: 7px; margin-top: 4px; }
   .row-progress .progress-track { flex: 1; height: 5px; }
   .row-progress-text { font-size: 10px; color: var(--c-ink-soft); font-weight: 700; white-space: nowrap; }
 
   .check-circle { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: #fff; transition: all .15s ease; padding: 0; }
   .check-circle-done { background: var(--c-success); border-color: var(--c-success); }
+  .status-dot { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px dashed var(--c-border); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .status-dot-ok { background: var(--c-success); border: 1.8px solid var(--c-success); }
 
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; }
   .chip-dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
   .rolled-badge { font-size: 10px; font-weight: 700; color: var(--c-saffron); background: var(--c-saffron-soft); border-radius: 999px; padding: 2px 6px; white-space: nowrap; flex-shrink: 0; }
-  .reminder-badge { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-soft); background: var(--c-border-soft); padding: 2px 6px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+  .reminder-badge { display: flex; align-items: center; gap: 3px; font-size: 10.5px; color: var(--c-ink-soft); background: var(--c-track); padding: 2px 7px; border-radius: 999px; white-space: nowrap; flex-shrink: 0; }
+  .archived-badge { font-size: 9.5px; font-weight: 700; color: var(--c-ink-soft); background: var(--c-track); border-radius: 999px; padding: 2px 7px; white-space: nowrap; }
 
-  .empty-state { text-align: center; padding: 22px 10px; background: var(--c-surface); border: 1px dashed var(--c-border); border-radius: 14px; }
-  .empty-title { font-size: 13px; font-weight: 600; color: var(--c-ink-soft); margin: 0 0 3px; }
+  .empty-state { text-align: center; padding: 26px 12px; background: var(--c-surface-2); border: 1px dashed var(--c-border); border-radius: 15px; }
+  .empty-title { font-size: 13px; font-weight: 600; color: var(--c-ink-soft); margin: 0 0 4px; }
   .empty-sub { font-size: 11.5px; color: var(--c-ink-faint); margin: 0; }
 
-  .add-inline-btn { margin-top: 10px; display: flex; align-items: center; gap: 5px; background: none; border: none; color: var(--c-primary); font-size: 12.5px; font-weight: 600; padding: 4px 0; }
+  .add-inline-btn { margin-top: 12px; display: flex; align-items: center; gap: 5px; background: none; border: none; color: var(--c-primary); font-size: 12.5px; font-weight: 600; padding: 4px 0; }
+  .archive-toggle { display: flex; align-items: center; gap: 6px; margin: 0 auto 14px; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--c-border); background: var(--c-surface); font-size: 12px; font-weight: 600; color: var(--c-ink-soft); }
+  .archive-toggle-on { background: var(--c-primary-soft); border-color: var(--c-primary); color: var(--c-primary); }
 
   .progress-track { width: 100%; height: 8px; border-radius: 5px; overflow: hidden; }
   .progress-fill { height: 100%; border-radius: 5px; transition: width .3s ease; }
-  .goal-progress-row { margin-bottom: 10px; }
-  .goal-progress-label { font-size: 12px; color: var(--c-ink-soft); margin-bottom: 5px; font-weight: 500; }
+  .goal-progress-row { margin-bottom: 12px; }
+  .goal-progress-label { font-size: 12px; color: var(--c-ink-soft); margin-bottom: 6px; font-weight: 500; }
 
-  .icon-btn { width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); flex-shrink: 0; }
+  .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); flex-shrink: 0; }
   .icon-btn-solid { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
 
-  .segmented { display: flex; background: var(--c-border-soft); border-radius: 11px; padding: 3px; margin-bottom: 14px; gap: 3px; }
-  .segmented button { flex: 1; border: none; background: none; padding: 8px 0; border-radius: 8px; font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); }
-  .seg-active { background: var(--c-surface) !important; color: var(--c-primary) !important; box-shadow: 0 1px 3px rgba(28,29,33,0.08); }
+  .segmented { display: flex; background: var(--c-track); border-radius: 12px; padding: 3px; margin-bottom: 14px; gap: 3px; }
+  .segmented button { flex: 1; border: none; background: none; padding: 8px 0; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); }
+  .seg-active { background: var(--c-surface) !important; color: var(--c-primary) !important; box-shadow: var(--shadow-sm); }
 
   .period-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+  .period-nav-sm { margin-bottom: 10px; }
   .period-label { font-size: 13.5px; font-weight: 700; }
+  .period-label-sm { font-size: 12px; font-weight: 700; color: var(--c-ink-soft); }
 
   .day-strip { display: flex; gap: 6px; margin-bottom: 10px; }
-  .day-chip { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 11px; border: 1px solid var(--c-border); background: var(--c-surface); }
+  .day-chip { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 8px 0; border-radius: 12px; border: 1px solid var(--c-border); background: var(--c-surface); }
   .day-chip-wd { font-size: 10px; color: var(--c-ink-faint); }
   .day-chip-num { font-size: 13px; font-weight: 700; }
   .day-chip-today { border-color: var(--c-saffron); }
   .day-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
-  .day-chip-active .day-chip-wd { color: rgba(255,255,255,0.75); }
+  .day-chip-active .day-chip-wd { color: rgba(255,255,255,0.78); }
   .day-chip-active .day-chip-num { color: #fff; }
   .today-jump { display: block; margin: 0 auto 12px; }
 
-  .habit-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; display: flex; flex-direction: column; gap: 8px; }
+  .habit-card { position: relative; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 13px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; overflow: hidden; box-shadow: var(--shadow-sm); }
   .habit-top { display: flex; align-items: center; gap: 9px; }
-  .habit-bottom { display: flex; align-items: center; justify-content: space-between; padding-inline-start: 31px; }
-  .habit-streak { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-ink-soft); font-weight: 600; }
-  .habit-dots { display: flex; gap: 4px; }
+  .habit-bottom { display: flex; align-items: center; justify-content: space-between; padding-inline-start: 31px; gap: 8px; }
+  .habit-streak { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--c-ink-soft); font-weight: 600; min-width: 0; }
+  .habit-week { color: var(--c-ink-faint); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .habit-dots { display: flex; gap: 4px; flex-shrink: 0; }
 
-  .fab { position: absolute; bottom: 78px; inset-inline-end: 18px; width: 50px; height: 50px; border-radius: 50%; background: var(--c-primary); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(42,67,116,0.35); z-index: 5; }
+  .fab { position: absolute; bottom: 84px; inset-inline-end: 18px; width: 52px; height: 52px; border-radius: 50%; background: var(--c-primary); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(42,67,116,0.34); z-index: 5; }
 
-  .bottom-nav { position: sticky; bottom: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 5px 2px 7px; max-width: 460px; margin: 0 auto; width: 100%; }
-  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; background: none; border: none; padding: 6px 0; color: var(--c-ink-faint); font-size: 9.5px; font-weight: 600; border-radius: 10px; }
+  .bottom-nav { position: sticky; bottom: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 6px 3px 8px; max-width: 460px; margin: 0 auto; width: 100%; }
+  .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; padding: 2px 0; color: var(--c-ink-faint); border-radius: 12px; }
+  .nav-icon-wrap { display: flex; align-items: center; justify-content: center; width: 40px; height: 26px; border-radius: 999px; transition: background .15s ease; }
+  .nav-label { font-size: 9.5px; font-weight: 600; }
   .nav-btn-active { color: var(--c-primary); }
+  .nav-btn-active .nav-icon-wrap { background: var(--c-primary-soft); }
 
-  .sheet-backdrop { position: fixed; inset: 0; background: rgba(28,29,33,0.42); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
-  .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 20px 20px 0 0; padding: 16px 18px 22px; max-height: 88vh; overflow-y: auto; }
+  /* ---- sheets & forms ---- */
+  .sheet-backdrop { position: fixed; inset: 0; background: rgba(10,11,13,0.5); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
+  .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 22px 22px 0 0; padding: 8px 18px 24px; max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+  .sheet-grab { width: 36px; height: 4px; border-radius: 2px; background: var(--c-border); margin: 0 auto 10px; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-  .sheet-title { font-size: 15px; font-weight: 800; }
+  .sheet-title { font-size: 15.5px; font-weight: 800; letter-spacing: -0.02em; }
 
-  .form { display: flex; flex-direction: column; gap: 4px; }
-  .field-label { font-size: 12px; font-weight: 700; color: var(--c-ink-soft); margin: 10px 0 6px; }
-  .text-input { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-bg); font-size: 13.5px; color: var(--c-ink); }
+  .form { display: flex; flex-direction: column; gap: 2px; }
+  .field-label { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--c-ink-soft); margin: 12px 0 6px; }
+  .field-hint { font-size: 10.5px; color: var(--c-ink-faint); margin: 6px 0 0; line-height: 1.65; }
+  .field-hint-ok { color: var(--c-success); }
+  .field-hint-warn { color: var(--c-danger); }
+  .text-input { width: 100%; padding: 11px 12px; border-radius: 11px; border: 1.5px solid var(--c-border); background: var(--c-surface-2); font-size: 13.5px; }
   .text-input:focus { border-color: var(--c-primary); outline: none; }
   .cat-picker { display: flex; flex-wrap: wrap; gap: 7px; }
   .cat-picker-btn { display: flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12.5px; font-weight: 600; }
-  .primary-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: none; background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .primary-btn { margin-top: 16px; width: 100%; padding: 13px 0; border-radius: 13px; border: none; background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
   .primary-btn:disabled { opacity: 0.4; }
-  .secondary-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .danger-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid #E7C7BE; background: var(--c-danger-soft); color: var(--c-danger); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .secondary-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .danger-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
 
-  .duration-picker { display: flex; align-items: flex-end; justify-content: center; gap: 10px; background: var(--c-bg); border: 1.5px solid var(--c-border); border-radius: 14px; padding: 14px; margin-top: 4px; }
+  .duration-picker { display: flex; align-items: flex-end; justify-content: center; gap: 10px; background: var(--c-surface-2); border: 1.5px solid var(--c-border); border-radius: 14px; padding: 14px; margin-top: 4px; }
   .dp-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
   .dp-label { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); }
-  .dp-select { font-size: 20px; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); text-align: center; }
+  .dp-select { font-size: 20px; font-weight: 800; padding: 8px 14px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); text-align: center; }
   .dp-hours { display: flex; align-items: center; gap: 5px; }
   .dp-hours button { width: 30px; height: 30px; border-radius: 9px; border: 1.5px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); padding: 0; flex-shrink: 0; }
-  .dp-num { width: 78px; font-size: 20px; font-weight: 800; padding: 8px 4px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); color: var(--c-ink); text-align: center; }
+  .dp-num { width: 78px; font-size: 20px; font-weight: 800; padding: 8px 4px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); text-align: center; -moz-appearance: textfield; }
   .dp-num::-webkit-outer-spin-button, .dp-num::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .dp-num { -moz-appearance: textfield; }
   .dp-sep { font-size: 22px; font-weight: 800; color: var(--c-ink-faint); padding-bottom: 10px; }
   .dp-current { font-size: 12.5px; color: var(--c-ink-soft); margin: 0 0 10px; }
 
   .big-stepper { display: flex; align-items: center; gap: 10px; }
-  .big-stepper button { width: 38px; height: 38px; min-width: 38px; border-radius: 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink); }
+  .big-stepper button { width: 38px; height: 38px; min-width: 38px; border-radius: 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; }
   .big-stepper-input { text-align: center; font-size: 16px; font-weight: 800; }
-
-  .detail-title { font-size: 17px; font-weight: 800; margin: 0 0 14px; line-height: 1.5; }
-  .detail-field { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--c-border-soft); }
-  .detail-label { font-size: 11.5px; font-weight: 700; color: var(--c-ink-soft); min-width: 88px; flex-shrink: 0; padding-top: 1px; }
-  .detail-value { font-size: 13px; flex: 1; }
-  .detail-desc { white-space: pre-wrap; line-height: 1.7; }
-  .detail-actions { display: flex; gap: 10px; margin-top: 18px; }
-  .detail-actions button { margin-top: 0; }
-  .detail-progress { margin-top: 16px; padding: 14px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 14px; }
-  .detail-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
-  .detail-done-note { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-success); font-weight: 700; margin: 8px 0 0; }
-  .detail-log-title { display: block; margin: 16px 0 6px; }
-  .log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
-  .log-row { display: flex; flex-direction: column; font-size: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 9px; padding: 7px 10px; }
-  .log-row-open { border-color: var(--c-primary); }
-  .log-row-top { display: flex; align-items: center; gap: 8px; }
-  .log-row-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 0; font-family: inherit; font-size: 12px; color: inherit; text-align: start; }
-  .log-row-static { cursor: default; }
-  .log-date { white-space: nowrap; flex-shrink: 0; }
-  .log-note-preview { color: var(--c-ink-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-  .log-note-full { margin: 8px 0 2px; padding-top: 8px; border-top: 1px dashed var(--c-border); font-size: 12px; line-height: 1.75; white-space: pre-wrap; color: var(--c-ink); }
-  .log-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
-  .toggle-big-btn { margin-top: 16px; width: 100%; padding: 12px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13.5px; font-weight: 700; color: var(--c-ink); display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .toggle-big-done { background: var(--c-success-soft); border-color: #BEDCD3; color: var(--c-success); }
-  .heatmap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-bottom: 4px; }
-  .heat-cell { display: block; width: 100%; aspect-ratio: 1; border-radius: 4px; }
-
-  .settings-h { font-size: 13px; font-weight: 800; margin: 0 0 10px; }
-  .settings-h-gap { margin-top: 26px; }
-  .toggle-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; }
-  .toggle-row input { width: 18px; height: 18px; margin: 0; flex-shrink: 0; accent-color: var(--c-primary); }
-  .toggle-sub { display: block; font-size: 11px; font-weight: 500; color: var(--c-ink-faint); margin-top: 4px; line-height: 1.6; }
-
-  .chart-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px 6px; }
-  .chart-box-row { display: flex; align-items: center; gap: 18px; padding: 14px 16px; }
-  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; flex: 1; }
-  .legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--c-ink); }
-  .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-  .legend-val { margin-inline-start: auto; font-weight: 700; color: var(--c-ink-soft); }
-  .note-area { width: 100%; min-height: 84px; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); padding: 10px 12px; font-size: 13px; resize: vertical; color: var(--c-ink); }
-  .note-area:focus { border-color: var(--c-primary); outline: none; }
-  .note-area-sm { min-height: 56px; }
-
-  .review-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-  .review-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 12px; }
-  .review-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-  .review-period { font-size: 11.5px; font-weight: 700; color: var(--c-primary); }
-  .review-text { font-size: 12.5px; margin: 3px 0; line-height: 1.6; }
-
-  .toast { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); max-width: 420px; width: calc(100% - 32px); background: var(--c-ink); color: #fff; padding: 11px 14px; border-radius: 12px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; z-index: 100; box-shadow: 0 6px 20px rgba(0,0,0,0.25); cursor: pointer; }
-
-  .cat-manage-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .cat-manage-row { display: flex; align-items: center; gap: 9px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 10px; padding: 8px 10px; }
-  .cat-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-  .cat-manage-label { flex: 1; font-size: 13px; font-weight: 600; }
-  .swatch-row { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
-  .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
-  .swatch-active { border-color: var(--c-ink); }
-
-  .group-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 14px; padding: 12px; margin-bottom: 14px; }
-  .group-card-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
-  .group-card-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .group-card-head h4 { margin: 0; font-size: 14px; font-weight: 800; }
-  .tracker-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; }
-  .stepper { display: flex; align-items: center; gap: 6px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 999px; padding: 3px 6px; flex-shrink: 0; }
-  .stepper button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--c-border); background: #fff; display: flex; align-items: center; justify-content: center; padding: 0; color: var(--c-ink-soft); }
-  .stepper-val { width: auto !important; min-width: 44px; border: none !important; background: none !important; font-size: 11.5px; font-weight: 700; color: var(--c-ink) !important; white-space: nowrap; padding: 0 4px !important; border-radius: 6px !important; }
-  .time-chip { display: flex; align-items: center; gap: 4px; background: var(--c-bg); border: 1px solid var(--c-border); border-radius: 999px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; color: var(--c-ink); white-space: nowrap; flex-shrink: 0; }
-  .group-summary { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 5px; }
-  .group-summary-title { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); margin-bottom: 2px; }
-  .group-summary-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; }
-  .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
-
-  .field-hint { font-size: 10.5px; color: var(--c-ink-faint); margin: 6px 0 0; line-height: 1.6; }
+  .bound-block { margin-bottom: 6px; }
+  .toggle-row-tight { padding: 9px 11px; margin-bottom: 6px; }
 
   .day-picker { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 6px; -webkit-overflow-scrolling: touch; }
-  .dpk-chip { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 9px; border-radius: 10px; border: 1.5px solid var(--c-border); background: var(--c-surface); min-width: 46px; }
+  .dpk-chip { flex: 0 0 auto; display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 6px 9px; border-radius: 11px; border: 1.5px solid var(--c-border); background: var(--c-surface); min-width: 46px; }
+  .dpk-chip-wide { min-width: 66px; }
   .dpk-wd { font-size: 9px; color: var(--c-ink-faint); }
   .dpk-num { font-size: 14px; font-weight: 800; }
+  .dpk-num-sm { font-size: 12px; }
   .dpk-mo { font-size: 9px; color: var(--c-ink-faint); }
   .dpk-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
   .dpk-chip-active .dpk-wd, .dpk-chip-active .dpk-mo { color: rgba(255,255,255,0.8); }
   .dpk-chip-active .dpk-num { color: #fff; }
 
+  /* ---- detail ---- */
+  .detail-title { font-size: 17.5px; font-weight: 800; margin: 0 0 14px; line-height: 1.5; letter-spacing: -0.02em; }
+  .detail-field { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--c-border-soft); }
+  .detail-label { font-size: 11.5px; font-weight: 700; color: var(--c-ink-soft); min-width: 88px; flex-shrink: 0; padding-top: 1px; }
+  .detail-value { font-size: 13px; flex: 1; }
+  .detail-desc { white-space: pre-wrap; line-height: 1.75; }
+  .detail-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .detail-actions button { margin-top: 0; flex: 1; min-width: 120px; }
+  .detail-progress { margin-top: 16px; padding: 14px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 15px; }
+  .detail-progress-head { display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; margin-bottom: 8px; }
+  .detail-split { font-size: 11px; color: var(--c-ink-soft); margin: 8px 0 0; }
+  .detail-done-note { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--c-success); font-weight: 700; margin: 8px 0 0; }
+  .detail-log-title { display: block; margin: 16px 0 7px; }
+  .val-ok { color: var(--c-success); }
+  .val-off { color: var(--c-ink); }
+
+  .log-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+  .log-row { display: flex; flex-direction: column; font-size: 12px; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px; padding: 8px 10px; }
+  .log-row-open { border-color: var(--c-primary); }
+  .log-row-top { display: flex; align-items: center; gap: 8px; }
+  .log-row-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; background: none; border: none; padding: 0; font-size: 12px; text-align: start; }
+  .log-row-static { cursor: default; }
+  .log-date { white-space: nowrap; flex-shrink: 0; }
+  .log-note-preview, .log-src { color: var(--c-ink-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .log-src { color: var(--c-primary); }
+  .log-note-full { margin: 8px 0 2px; padding-top: 8px; border-top: 1px dashed var(--c-border); font-size: 12px; line-height: 1.8; white-space: pre-wrap; }
+  .log-src-full { display: flex; align-items: center; gap: 5px; color: var(--c-primary); }
+  .log-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
   .log-row-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--c-border); }
-  .mini-btn { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 8px; border: 1px solid var(--c-border); background: var(--c-bg); font-size: 11.5px; font-weight: 700; color: var(--c-ink); }
-  .mini-btn-danger { background: var(--c-danger-soft); border-color: #E7C7BE; color: var(--c-danger); }
-  .row-desc-note { display: flex; align-items: center; gap: 3px; color: var(--c-ink-soft); }
+  .mini-btn { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--c-border); background: var(--c-surface-2); font-size: 11.5px; font-weight: 700; }
+  .mini-btn-danger { background: var(--c-danger-soft); border-color: var(--c-danger); color: var(--c-danger); }
+  .chev-open { transform: rotate(180deg); }
+
+  .toggle-big-btn { margin-top: 14px; width: 100%; padding: 12px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .toggle-big-done { background: var(--c-success-soft); border-color: var(--c-success); color: var(--c-success); }
+  .heatmap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-bottom: 4px; }
+  .heat-cell { display: block; width: 100%; aspect-ratio: 1; border-radius: 4px; }
+
+  .settings-h { font-size: 13px; font-weight: 800; margin: 0 0 10px; }
+  .settings-h-gap { margin-top: 26px; }
+  .toggle-row { display: flex; align-items: flex-start; gap: 10px; font-size: 13px; font-weight: 600; cursor: pointer; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 12px; padding: 12px; }
+  .toggle-row input { width: 18px; height: 18px; margin: 0; flex-shrink: 0; accent-color: var(--c-primary); }
+  .toggle-sub { display: block; font-size: 11px; font-weight: 500; color: var(--c-ink-faint); margin-top: 4px; line-height: 1.6; }
+
+  .chart-box { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 15px; padding: 12px 6px; box-shadow: var(--shadow-sm); }
+  .chart-box-row { display: flex; align-items: center; gap: 18px; padding: 14px 16px; }
+  .legend { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+  .legend-row { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .legend-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .legend-val { margin-inline-start: auto; font-weight: 700; color: var(--c-ink-soft); }
+  .note-area { width: 100%; min-height: 84px; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface-2); padding: 10px 12px; font-size: 13px; resize: vertical; line-height: 1.7; }
+  .note-area:focus { border-color: var(--c-primary); outline: none; }
+  .note-area-sm { min-height: 54px; }
+
+  .review-list { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .review-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 13px; padding: 11px 12px; }
+  .review-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+  .review-period { font-size: 11.5px; font-weight: 700; color: var(--c-primary); }
+  .review-text { font-size: 12.5px; margin: 3px 0; line-height: 1.7; }
+
+  .toast { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); max-width: 420px; width: calc(100% - 32px); background: var(--c-ink); color: var(--c-bg); padding: 12px 14px; border-radius: 13px; display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; z-index: 100; box-shadow: var(--shadow-md); cursor: pointer; }
+
+  .cat-manage-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .cat-manage-row { display: flex; align-items: center; gap: 9px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 11px; padding: 8px 10px; }
+  .cat-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .cat-manage-label { flex: 1; font-size: 13px; font-weight: 600; }
+  .swatch-row { display: flex; gap: 8px; margin: 8px 0 4px; flex-wrap: wrap; }
+  .swatch { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; padding: 0; }
+  .swatch-active { border-color: var(--c-ink); }
   .search-group { margin-bottom: 6px; }
   .search-empty { font-size: 12.5px; color: var(--c-ink-faint); text-align: center; padding: 18px 0 4px; margin: 0; }
+
+  .group-card { background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 16px; padding: 13px; margin-bottom: 14px; box-shadow: var(--shadow-sm); }
+  .group-card-archived { opacity: 0.72; }
+  .group-card-head { display: flex; align-items: flex-start; gap: 5px; margin-bottom: 10px; }
+  .group-card-titles { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .group-card-head h4 { margin: 0; font-size: 14.5px; font-weight: 800; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; letter-spacing: -0.02em; }
+  .group-period-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 9.5px; font-weight: 700; color: var(--c-ink-soft); background: var(--c-track); border-radius: 999px; padding: 2px 7px; }
+  .stepper { display: flex; align-items: center; gap: 6px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 999px; padding: 3px 6px; flex-shrink: 0; }
+  .stepper button { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; padding: 0; color: var(--c-ink-soft); }
+  .stepper-val { width: auto !important; min-width: 44px; border: none !important; background: none !important; font-size: 11.5px; font-weight: 700; color: var(--c-ink) !important; white-space: nowrap; padding: 0 4px !important; border-radius: 6px !important; }
+  .time-chip { display: flex; align-items: center; gap: 4px; background: var(--c-surface-2); border: 1px solid var(--c-border); border-radius: 999px; padding: 6px 10px; font-size: 11.5px; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
+  .group-summary { margin-top: 11px; padding-top: 11px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 6px; }
+  .group-summary-title { font-size: 11px; font-weight: 700; color: var(--c-ink-soft); margin-bottom: 2px; }
+  .group-summary-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; gap: 8px; }
+  .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
 
   @media (prefers-reduced-motion: reduce) { .app-root * { transition: none !important; } }
 `;
@@ -2208,13 +2601,14 @@ function PlanningApp() {
   const [categories, setCategories] = useState(DEFAULT_CATEGORIES);
   const [trackerGroups, setTrackerGroups] = useState([]);
   const [trackerItems, setTrackerItems] = useState([]);
-  const [trackerLogs, setTrackerLogs] = useState({});
+  const [trackerEntries, setTrackerEntries] = useState([]);
   const [settings, setSettings] = useState(DEFAULT_SETTINGS);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [detail, setDetail] = useState(null);   // { kind, id }
-  const [editing, setEditing] = useState(null); // { kind, item }
+  const [detail, setDetail] = useState(null);
+  const [editing, setEditing] = useState(null);
   const [toast, setToast] = useState(null);
+  const [systemDark, setSystemDark] = useState(false);
   const today = useMemo(() => todayJalali(), []);
   const didAutoRoll = useRef(false);
 
@@ -2225,76 +2619,73 @@ function PlanningApp() {
 
   useEffect(() => {
     const d = loadAll();
-    if (d.goals) setGoals(d.goals.map(migrateGoal));
+    if (d.goals) setGoals(recomputeGoals(d.goals.map(migrateGoal)));
     if (d.tasks) setTasks(d.tasks);
-    if (d.habits) setHabits(d.habits);
+    if (d.habits) setHabits(d.habits.map(migrateHabit));
     if (d.notes) setNotes(d.notes);
     if (d.reviews) setReviews(d.reviews);
     if (d.categories) setCategories(d.categories);
-    if (d.trackerGroups) setTrackerGroups(d.trackerGroups);
-    if (d.trackerItems) setTrackerItems(d.trackerItems);
-    if (d.trackerLogs) setTrackerLogs(migrateTrackerLogs(d.trackerLogs));
+    if (d.trackerGroups) setTrackerGroups(d.trackerGroups.map((g) => ({ period: "daily", archived: false, ...g })));
+    if (d.trackerItems) setTrackerItems(d.trackerItems.map((i) => ({ archived: false, ...i })));
+    setTrackerEntries(migrateTrackerEntries(d.trackerEntries, d.trackerLogs));
     if (d.settings) setSettings({ ...DEFAULT_SETTINGS, ...d.settings });
     setLoaded(true);
   }, []);
 
+  // Track the OS colour scheme so "auto" can follow it live.
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const apply = () => setSystemDark(!!mq.matches);
+    apply();
+    if (mq.addEventListener) { mq.addEventListener("change", apply); return () => mq.removeEventListener("change", apply); }
+    if (mq.addListener) { mq.addListener(apply); return () => mq.removeListener(apply); }
+  }, []);
+
+  const themeMode = settings.theme || "auto";
+  const isDark = themeMode === "dark" || (themeMode === "auto" && systemDark);
+  useEffect(() => {
+    try {
+      const meta = document.querySelector('meta[name="theme-color"]');
+      if (meta) meta.setAttribute("content", isDark ? "#131519" : "#2A4374");
+    } catch (e) { /* ignore */ }
+  }, [isDark]);
+
   const openDetail = useCallback((d) => setDetail(d), []);
   const closeDetail = useCallback(() => setDetail(null), []);
+
+  // Every goals write funnels through here: one weekly edit can complete a
+  // monthly parent, so completion is always re-derived for the whole set.
+  const commitGoals = useCallback((updater) => {
+    setGoals((prev) => {
+      const next = recomputeGoals(typeof updater === "function" ? updater(prev) : updater);
+      persist("goals", next);
+      return next;
+    });
+  }, []);
 
   /* ---- goals ---- */
   const addGoal = useCallback((goal) => {
     if (goal.reminderTime) requestNotifyPermission();
-    setGoals((prev) => { const next = [...prev, goal]; persist("goals", next); return next; });
-  }, []);
-  const toggleGoal = useCallback((id) => setGoals((prev) => {
-    const next = prev.map((g) => g.id === id ? { ...g, completed: !g.completed } : g);
-    persist("goals", next); return next;
-  }), []);
-  const updateGoal = useCallback((id, data) => setGoals((prev) => {
-    const next = prev.map((g) => {
-      if (g.id !== id) return g;
-      const merged = { ...g, ...data };
-      if (data.reminderTime !== undefined && data.reminderTime !== g.reminderTime) {
-        merged.lastReminderKey = null;
-        if (data.reminderTime) requestNotifyPermission();
-      }
-      // A goal that stops being measurable loses its auto-completion rule.
-      if (isMeasurable(merged)) merged.completed = goalProgress(merged) >= merged.targetValue;
-      return merged;
-    });
-    persist("goals", next); return next;
-  }), []);
-  const deleteGoal = useCallback((id) => setGoals((prev) => { const next = prev.filter((g) => g.id !== id); persist("goals", next); return next; }), []);
-  const logGoalProgress = useCallback((id, dk, delta, note) => setGoals((prev) => {
-    const next = prev.map((g) => {
-      if (g.id !== id) return g;
-      const progressEntries = [...(g.progressEntries || []), { id: uid(), dateKey: dk, value: delta, note: note || null }];
-      const merged = { ...g, progressEntries };
-      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
-      return merged;
-    });
-    persist("goals", next); return next;
-  }), []);
-  const clearGoalLogEntry = useCallback((id, entryId) => setGoals((prev) => {
-    const next = prev.map((g) => {
-      if (g.id !== id) return g;
-      const progressEntries = (g.progressEntries || []).filter((e) => e.id !== entryId);
-      const merged = { ...g, progressEntries };
-      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
-      return merged;
-    });
-    persist("goals", next); return next;
-  }), []);
-  const updateGoalEntry = useCallback((id, entryId, patch) => setGoals((prev) => {
-    const next = prev.map((g) => {
-      if (g.id !== id) return g;
-      const progressEntries = (g.progressEntries || []).map((e) => e.id === entryId ? { ...e, ...patch, note: patch.note || null } : e);
-      const merged = { ...g, progressEntries };
-      merged.completed = goalProgress(merged) >= (merged.targetValue || Infinity);
-      return merged;
-    });
-    persist("goals", next); return next;
-  }), []);
+    commitGoals((prev) => [...prev, goal]);
+  }, [commitGoals]);
+  const toggleGoal = useCallback((id) => commitGoals((prev) => prev.map((g) => g.id === id ? { ...g, completed: !g.completed } : g)), [commitGoals]);
+  const updateGoal = useCallback((id, data) => commitGoals((prev) => prev.map((g) => {
+    if (g.id !== id) return g;
+    const merged = { ...g, ...data };
+    if (data.reminderTime !== undefined && data.reminderTime !== g.reminderTime) {
+      merged.lastReminderKey = null;
+      if (data.reminderTime) requestNotifyPermission();
+    }
+    return merged;
+  })), [commitGoals]);
+  const deleteGoal = useCallback((id) => commitGoals((prev) => prev.filter((g) => g.id !== id).map((g) => g.linkedMonthlyId === id ? { ...g, linkedMonthlyId: null } : g)), [commitGoals]);
+  const logGoalProgress = useCallback((id, dk, delta, note) => commitGoals((prev) => prev.map((g) =>
+    g.id === id ? { ...g, progressEntries: [...(g.progressEntries || []), { id: uid(), dateKey: dk, value: delta, note: note || null }] } : g)), [commitGoals]);
+  const updateGoalEntry = useCallback((id, entryId, patch) => commitGoals((prev) => prev.map((g) =>
+    g.id === id ? { ...g, progressEntries: (g.progressEntries || []).map((e) => e.id === entryId ? { ...e, ...patch, note: patch.note || null } : e) } : g)), [commitGoals]);
+  const clearGoalLogEntry = useCallback((id, entryId) => commitGoals((prev) => prev.map((g) =>
+    g.id === id ? { ...g, progressEntries: (g.progressEntries || []).filter((e) => e.id !== entryId) } : g)), [commitGoals]);
 
   /* ---- tasks ---- */
   const addTask = useCallback((task) => {
@@ -2316,9 +2707,18 @@ function PlanningApp() {
   const toggleHabit = useCallback((id, dk) => setHabits((prev) => {
     const next = prev.map((h) => {
       if (h.id !== id) return h;
-      const completions = { ...h.completions };
-      if (completions[dk]) delete completions[dk]; else completions[dk] = true;
-      return { ...h, completions };
+      const entries = { ...(h.entries || {}) };
+      if (entries[dk]) delete entries[dk]; else entries[dk] = true;
+      return { ...h, entries };
+    });
+    persist("habits", next); return next;
+  }), []);
+  const setHabitValue = useCallback((id, dk, value) => setHabits((prev) => {
+    const next = prev.map((h) => {
+      if (h.id !== id) return h;
+      const entries = { ...(h.entries || {}) };
+      if (!value) delete entries[dk]; else entries[dk] = value;
+      return { ...h, entries };
     });
     persist("habits", next); return next;
   }), []);
@@ -2345,35 +2745,72 @@ function PlanningApp() {
       const next = prev.filter((c) => c.id !== id);
       const fallback = next[0].id;
       persist("categories", next);
-      setGoals((pg) => { const ng = pg.map((g) => g.category === id ? { ...g, category: fallback } : g); persist("goals", ng); return ng; });
+      commitGoals((pg) => pg.map((g) => g.category === id ? { ...g, category: fallback } : g));
       setTasks((pt) => { const nt = pt.map((t) => t.category === id ? { ...t, category: fallback } : t); persist("tasks", nt); return nt; });
       setHabits((ph) => { const nh = ph.map((h) => h.category === id ? { ...h, category: fallback } : h); persist("habits", nh); return nh; });
       return next;
     });
-  }, []);
+  }, [commitGoals]);
   const updateSettings = useCallback((patch) => setSettings((prev) => { const next = { ...prev, ...patch }; persist("settings", next); return next; }), []);
 
   /* ---- tracker ---- */
   const addTrackerGroup = useCallback((group) => setTrackerGroups((prev) => { const next = [...prev, group]; persist("trackerGroups", next); return next; }), []);
   const editTrackerGroup = useCallback((id, data) => setTrackerGroups((prev) => { const next = prev.map((g) => g.id === id ? { ...g, ...data } : g); persist("trackerGroups", next); return next; }), []);
+  const archiveTrackerGroup = useCallback((id) => setTrackerGroups((prev) => { const next = prev.map((g) => g.id === id ? { ...g, archived: !g.archived } : g); persist("trackerGroups", next); return next; }), []);
   const deleteTrackerGroup = useCallback((id) => {
     setTrackerGroups((prev) => { const next = prev.filter((g) => g.id !== id); persist("trackerGroups", next); return next; });
-    setTrackerItems((prev) => { const next = prev.filter((it) => it.groupId !== id); persist("trackerItems", next); return next; });
-  }, []);
-  const addTrackerItem = useCallback((item) => setTrackerItems((prev) => { const next = [...prev, item]; persist("trackerItems", next); return next; }), []);
-  const updateTrackerItem = useCallback((id, data) => setTrackerItems((prev) => { const next = prev.map((it) => it.id === id ? { ...it, ...data } : it); persist("trackerItems", next); return next; }), []);
-  const deleteTrackerItem = useCallback((id) => setTrackerItems((prev) => { const next = prev.filter((it) => it.id !== id); persist("trackerItems", next); return next; }), []);
-  const setTrackerLog = useCallback((itemId, dk, value, note) => {
-    setTrackerLogs((prev) => {
-      const next = { ...prev };
-      const key = `${itemId}:${dk}`;
-      const emptyValue = value === false || value === 0 || value === undefined || value === null;
-      if (emptyValue && !note) delete next[key];
-      else next[key] = { value, note: note || null };
-      persist("trackerLogs", next);
+    setTrackerItems((prev) => {
+      const gone = new Set(prev.filter((it) => it.groupId === id).map((it) => it.id));
+      const next = prev.filter((it) => it.groupId !== id);
+      persist("trackerItems", next);
+      setTrackerEntries((pe) => { const ne = pe.filter((e) => !gone.has(e.itemId)); persist("trackerEntries", ne); return ne; });
       return next;
     });
   }, []);
+  const addTrackerItem = useCallback((item) => setTrackerItems((prev) => { const next = [...prev, item]; persist("trackerItems", next); return next; }), []);
+  const updateTrackerItem = useCallback((id, data) => setTrackerItems((prev) => { const next = prev.map((it) => it.id === id ? { ...it, ...data } : it); persist("trackerItems", next); return next; }), []);
+  const archiveTrackerItem = useCallback((id) => setTrackerItems((prev) => { const next = prev.map((it) => it.id === id ? { ...it, archived: !it.archived } : it); persist("trackerItems", next); return next; }), []);
+  const deleteTrackerItem = useCallback((id) => {
+    setTrackerItems((prev) => { const next = prev.filter((it) => it.id !== id); persist("trackerItems", next); return next; });
+    setTrackerEntries((prev) => { const next = prev.filter((e) => e.itemId !== id); persist("trackerEntries", next); return next; });
+  }, []);
+
+  const addTrackerEntry = useCallback((itemId, periodKey, value, note) => setTrackerEntries((prev) => {
+    const next = [...prev, { id: uid(), itemId, periodKey, value, note: note || null }];
+    persist("trackerEntries", next); return next;
+  }), []);
+  const updateTrackerEntry = useCallback((entryId, patch) => setTrackerEntries((prev) => {
+    const next = prev.map((e) => e.id === entryId ? { ...e, ...patch, note: patch.note || null } : e);
+    persist("trackerEntries", next); return next;
+  }), []);
+  const deleteTrackerEntry = useCallback((itemId, periodKey, wholePeriod, entryId) => setTrackerEntries((prev) => {
+    const next = wholePeriod
+      ? prev.filter((e) => !(e.itemId === itemId && e.periodKey === periodKey))
+      : prev.filter((e) => e.id !== entryId);
+    persist("trackerEntries", next); return next;
+  }), []);
+  const toggleTrackerBool = useCallback((item, periodKey, v) => setTrackerEntries((prev) => {
+    const next = v
+      ? [...prev.filter((e) => !(e.itemId === item.id && e.periodKey === periodKey)), { id: uid(), itemId: item.id, periodKey, value: true, note: null }]
+      : prev.filter((e) => !(e.itemId === item.id && e.periodKey === periodKey));
+    persist("trackerEntries", next); return next;
+  }), []);
+  /* +1 appends a plain entry; -1 walks back the most recent one so the
+     history stays a truthful record instead of accumulating negatives. */
+  const quickAddTracker = useCallback((item, periodKey, delta) => setTrackerEntries((prev) => {
+    let next;
+    if (delta > 0) {
+      next = [...prev, { id: uid(), itemId: item.id, periodKey, value: delta, note: null }];
+    } else {
+      let idx = -1;
+      for (let i = prev.length - 1; i >= 0; i--) if (prev[i].itemId === item.id && prev[i].periodKey === periodKey) { idx = i; break; }
+      if (idx < 0) return prev;
+      const e = prev[idx];
+      const nv = (e.value || 0) + delta;
+      next = nv <= 0 ? prev.filter((_, i) => i !== idx) : prev.map((x, i) => i === idx ? { ...x, value: nv } : x);
+    }
+    persist("trackerEntries", next); return next;
+  }), []);
 
   /* ---- rollover ---- */
   const overdueTasks = useMemo(() => findOverdueTasks(tasks, todayKey), [tasks, todayKey]);
@@ -2382,27 +2819,18 @@ function PlanningApp() {
   const rolloverTasks = useCallback(() => {
     setTasks((prev) => {
       const next = prev.map((t) => (!t.completed && t.dateKey < todayKey)
-        ? { ...t, dateKey: todayKey, reminderFired: false, rolloverCount: (t.rolloverCount || 0) + 1 }
-        : t);
+        ? { ...t, dateKey: todayKey, reminderFired: false, rolloverCount: (t.rolloverCount || 0) + 1 } : t);
       persist("tasks", next); return next;
     });
   }, [todayKey]);
-
   const rolloverGoals = useCallback(() => {
-    setGoals((prev) => {
-      const next = prev.map((g) => {
-        if (g.completed) return g;
-        if (g.type === "monthly" && g.monthKey && g.monthKey < curMonthKey) {
-          return { ...g, monthKey: curMonthKey, rolloverCount: (g.rolloverCount || 0) + 1 };
-        }
-        if (g.type === "weekly" && g.weekKey && g.weekKey < curWeekKey) {
-          return { ...g, weekKey: curWeekKey, rolloverCount: (g.rolloverCount || 0) + 1 };
-        }
-        return g;
-      });
-      persist("goals", next); return next;
-    });
-  }, [curMonthKey, curWeekKey]);
+    commitGoals((prev) => prev.map((g) => {
+      if (g.completed) return g;
+      if (g.type === "monthly" && g.monthKey && g.monthKey < curMonthKey) return { ...g, monthKey: curMonthKey, rolloverCount: (g.rolloverCount || 0) + 1 };
+      if (g.type === "weekly" && g.weekKey && g.weekKey < curWeekKey) return { ...g, weekKey: curWeekKey, rolloverCount: (g.rolloverCount || 0) + 1 };
+      return g;
+    }));
+  }, [commitGoals, curMonthKey, curWeekKey]);
 
   useEffect(() => {
     if (!loaded || didAutoRoll.current || !settings.autoRollover) return;
@@ -2411,10 +2839,7 @@ function PlanningApp() {
     if (findOverdueGoals(goals, curMonthKey, curWeekKey).length) rolloverGoals();
   }, [loaded, settings.autoRollover]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ---- reminder polling ----
-     Reads current data from a ref and performs the notification side effects
-     outside the state updaters, so updating state never triggers a beep twice
-     under React's double-invoked updaters. */
+  /* ---- reminders ---- */
   const dataRef = useRef({ tasks, habits, goals });
   useEffect(() => { dataRef.current = { tasks, habits, goals }; }, [tasks, habits, goals]);
 
@@ -2423,19 +2848,14 @@ function PlanningApp() {
       const now = new Date();
       const nowKey = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
       const cur = dataRef.current;
-
-      const dueTasks = cur.tasks.filter((t) =>
-        t.dateKey === todayKey && t.reminderTime && !t.completed && !t.reminderFired && t.reminderTime <= nowKey);
-      const dueHabits = cur.habits.filter((h) =>
-        h.reminderTime && !h.completions[todayKey] && h.lastReminderKey !== todayKey && h.reminderTime <= nowKey);
+      const dueTasks = cur.tasks.filter((t) => t.dateKey === todayKey && t.reminderTime && !t.completed && !t.reminderFired && t.reminderTime <= nowKey);
+      const dueHabits = cur.habits.filter((h) => h.reminderTime && !habitDaySuccess(h, todayKey) && h.lastReminderKey !== todayKey && h.reminderTime <= nowKey);
       const dueGoals = cur.goals.filter((g) => {
         if (!g.reminderTime || g.completed || g.lastReminderKey === todayKey || g.reminderTime > nowKey) return false;
-        // Only nag about goals whose period is the one we're actually in.
         if (g.type === "monthly") return g.monthKey === curMonthKey;
         if (g.type === "weekly") return g.weekKey === curWeekKey;
         return false;
       });
-
       if (!dueTasks.length && !dueHabits.length && !dueGoals.length) return;
 
       if (dueTasks.length) {
@@ -2448,7 +2868,7 @@ function PlanningApp() {
       }
       if (dueGoals.length) {
         const ids = new Set(dueGoals.map((g) => g.id));
-        setGoals((prev) => { const next = prev.map((g) => ids.has(g.id) ? { ...g, lastReminderKey: todayKey } : g); persist("goals", next); return next; });
+        commitGoals((prev) => prev.map((g) => ids.has(g.id) ? { ...g, lastReminderKey: todayKey } : g));
       }
 
       const all = [
@@ -2457,15 +2877,14 @@ function PlanningApp() {
         ...dueGoals.map((g) => ({ title: g.title, kind: "هدف" })),
       ];
       playBeep();
-      for (const item of all) fireBrowserNotification(`یادآوری ${item.kind}: ${item.title}`, "زمان انجامش رسیده");
-      setToast(all.length === 1
-        ? { title: all[0].title }
-        : { title: `${toFa(all.length)} مورد (${all.map((a) => a.title).join("، ")})` });
+      for (const it of all) fireBrowserNotification(`یادآوری ${it.kind}: ${it.title}`, "زمان انجامش رسیده");
+      setToast(all.length === 1 ? { title: all[0].title } : { title: `${toFa(all.length)} مورد (${all.map((a) => a.title).join("، ")})` });
     }, 20000);
     return () => clearInterval(interval);
-  }, [todayKey, curMonthKey, curWeekKey]);
+  }, [todayKey, curMonthKey, curWeekKey, commitGoals]);
 
   const allActiveGoals = useMemo(() => goals.filter((g) => !g.completed), [goals]);
+  const visibleItems = useMemo(() => trackerItems.filter((i) => !i.archived), [trackerItems]);
 
   /* ---- detail + edit routing ---- */
   const detailItem = useMemo(() => {
@@ -2480,10 +2899,7 @@ function PlanningApp() {
   const DETAIL_TITLES = { goal: "جزئیات هدف", task: "جزئیات کار", habit: "جزئیات عادت", tracker: "جزئیات مورد" };
   const EDIT_TITLES = { goal: "ویرایش هدف", task: "ویرایش کار", habit: "ویرایش عادت", tracker: "ویرایش مورد" };
 
-  function startEdit() {
-    setEditing({ kind: detail.kind, item: detailItem });
-    setDetail(null);
-  }
+  function startEdit() { setEditing({ kind: detail.kind, item: detailItem }); setDetail(null); }
   function confirmDelete() {
     const k = detail.kind, id = detail.id;
     setDetail(null);
@@ -2501,18 +2917,22 @@ function PlanningApp() {
     setEditing(null);
   }
 
+  const themeClass = themeMode === "dark" ? "theme-dark" : themeMode === "light" ? "theme-light" : ("theme-auto" + (systemDark ? " is-dark" : ""));
+
   return (
     <CategoriesContext.Provider value={categories}>
-      <div dir="rtl" className="app-root">
+      <div dir="rtl" className={"app-root " + themeClass}>
         <style>{APP_CSS}</style>
-
         <Toast toast={toast} onClose={() => setToast(null)} />
 
         <header className="app-header">
           <div className="app-header-top">
             <span className="app-wordmark">گاه‌نما</span>
             <div className="header-right-group">
-              <span className="app-header-date">{PERSIAN_WEEKDAYS[persianWeekdayIndex(today.jy, today.jm, today.jd)]}، {toFa(today.jd)} {PERSIAN_MONTHS[today.jm - 1]} {toFa(today.jy)}</span>
+              <span className="app-header-date">{PERSIAN_WEEKDAYS[persianWeekdayIndex(today.jy, today.jm, today.jd)]}، {toFa(today.jd)} {PERSIAN_MONTHS[today.jm - 1]}</span>
+              <IconBtn onClick={() => updateSettings({ theme: isDark ? "light" : "dark" })} label="تغییر تم">
+                {isDark ? <Sun size={16} /> : <Moon size={16} />}
+              </IconBtn>
               <IconBtn onClick={() => setSearchOpen(true)} label="جست‌وجو"><Search size={16} /></IconBtn>
               <IconBtn onClick={() => setSettingsOpen(true)} label="تنظیمات"><Settings size={16} /></IconBtn>
             </div>
@@ -2539,12 +2959,14 @@ function PlanningApp() {
                 openDetail={openDetail} overdueTasks={overdueTasks} rolloverTasks={rolloverTasks} />
             )}
             {tab === "habits" && (
-              <HabitsTab today={today} habits={habits} addHabit={addHabit} toggleHabit={toggleHabit} openDetail={openDetail} />
+              <HabitsTab today={today} habits={habits} addHabit={addHabit} toggleHabit={toggleHabit}
+                setHabitValue={setHabitValue} openDetail={openDetail} />
             )}
             {tab === "tracker" && (
-              <TrackerTab today={today} trackerGroups={trackerGroups} trackerItems={trackerItems} trackerLogs={trackerLogs}
-                addGroup={addTrackerGroup} editGroup={editTrackerGroup} deleteGroup={deleteTrackerGroup}
-                addItem={addTrackerItem} setLog={setTrackerLog} openDetail={openDetail} />
+              <TrackerTab today={today} trackerGroups={trackerGroups} trackerItems={trackerItems} trackerEntries={trackerEntries}
+                addGroup={addTrackerGroup} editGroup={editTrackerGroup} deleteGroup={deleteTrackerGroup} archiveGroup={archiveTrackerGroup}
+                addItem={addTrackerItem} addEntry={addTrackerEntry} quickAdd={quickAddTracker} toggleBool={toggleTrackerBool}
+                openDetail={openDetail} />
             )}
             {tab === "review" && (
               <ReviewTab today={today} tasks={tasks} goals={goals} notes={notes} reviews={reviews}
@@ -2575,11 +2997,15 @@ function PlanningApp() {
                 <TaskDetail task={detailItem} goals={goals} onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleTask} />
               )}
               {detail.kind === "habit" && (
-                <HabitDetail habit={detailItem} today={today} onEdit={startEdit} onDelete={confirmDelete} onToggle={toggleHabit} />
+                <HabitDetail habit={detailItem} today={today} onEdit={startEdit} onDelete={confirmDelete}
+                  onToggle={toggleHabit} onSetValue={setHabitValue} />
               )}
               {detail.kind === "tracker" && (
-                <TrackerItemDetail item={detailItem} trackerLogs={trackerLogs} today={today}
-                  onEdit={startEdit} onDelete={confirmDelete} onSetLog={setTrackerLog} />
+                <TrackerItemDetail item={detailItem} group={trackerGroups.find((g) => g.id === detailItem.groupId)}
+                  trackerEntries={trackerEntries} today={today}
+                  onEdit={startEdit} onDelete={confirmDelete}
+                  onAddEntry={addTrackerEntry} onUpdateEntry={updateTrackerEntry} onDeleteEntry={deleteTrackerEntry}
+                  onToggleArchive={archiveTrackerItem} />
               )}
             </>
           )}
