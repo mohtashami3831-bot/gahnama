@@ -243,6 +243,7 @@ function dateKey(jy, jm, jd) {
   return `${jy}-${String(jm).padStart(2, "0")}-${String(jd).padStart(2, "0")}`;
 }
 function monthKey(jy, jm) { return `${jy}-${String(jm).padStart(2, "0")}`; }
+function yearKeyOf(jy) { return String(jy); }
 function sameDate(a, b) { return a.jy === b.jy && a.jm === b.jm && a.jd === b.jd; }
 
 const PERSIAN_MONTHS = ["فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور", "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"];
@@ -306,6 +307,12 @@ const GROUP_PERIODS = [
   { id: "daily", label: "روزانه" },
   { id: "monthly", label: "ماهانه" },
 ];
+const LIMIT_PERIODS = [
+  { id: "daily", label: "روز", inLabel: "در روز" },
+  { id: "weekly", label: "هفته", inLabel: "در هفته" },
+  { id: "monthly", label: "ماه", inLabel: "در ماه" },
+  { id: "yearly", label: "سال", inLabel: "در سال" },
+];
 const HABIT_METRICS = [
   { id: "simple", label: "ساده" },
   { id: "count", label: "تعدادی" },
@@ -368,9 +375,25 @@ function migrateGoal(g) {
       if (v) entries.push({ id: `mig_${dk}_${Math.random().toString(36).slice(2, 7)}`, dateKey: dk, value: v, note: null });
     }
   }
-  const out = { ...g, progressEntries: entries };
+  const out = { yearKey: null, ...g, progressEntries: entries };
   delete out.progressLog;
   return out;
+}
+
+const GOAL_TYPE_LABEL = { yearly: "هدف سالانه", monthly: "هدف ماهانه", weekly: "هدف هفتگی" };
+/* A weekly goal may feed a monthly or a yearly one; a monthly goal may feed
+   a yearly one. Yearly goals sit at the top and have no parent. */
+const GOAL_PARENT_TYPES = { weekly: ["monthly", "yearly"], monthly: ["yearly"], yearly: [] };
+
+function goalPeriodText(goal) {
+  if (goal.type === "yearly") return `سال ${toFa(goal.yearKey)}`;
+  if (goal.type === "monthly") {
+    const [jy, jm] = goal.monthKey.split("-").map(Number);
+    return `${PERSIAN_MONTHS[jm - 1]} ${toFa(jy)}`;
+  }
+  const [jy, jm, jd] = goal.weekKey.split("-").map(Number);
+  const end = addDaysJalali(jy, jm, jd, 6);
+  return `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]} تا ${toFa(end.jd)} ${PERSIAN_MONTHS[end.jm - 1]}`;
 }
 
 function goalOwnProgress(goal) {
@@ -380,13 +403,21 @@ function goalOwnProgress(goal) {
   for (const e of entries) sum += e.value || 0;
   return sum;
 }
-function linkedEntriesFor(goal, goals) {
-  if (!goal || goal.type !== "monthly" || !isMeasurable(goal)) return [];
+/* Children feed their parent, and the chain is transitive: a weekly goal
+   linked to a monthly goal that is itself linked to a yearly goal reaches
+   the yearly total too. Only same-unit links contribute — pouring "pages"
+   into an "hours" goal would be wrong. `seen` guards against a cycle if
+   data is ever hand-edited into one. */
+function linkedEntriesFor(goal, goals, seen) {
+  if (!goal || !isMeasurable(goal)) return [];
+  const visited = seen || new Set([goal.id]);
   const out = [];
   for (const g of goals) {
-    if (g.id === goal.id || g.linkedMonthlyId !== goal.id) continue;
-    if (g.targetType !== goal.targetType) continue; // different unit — don't mix
+    if (g.linkedMonthlyId !== goal.id || visited.has(g.id)) continue;
+    if (g.targetType !== goal.targetType) continue;
+    visited.add(g.id);
     for (const e of (g.progressEntries || [])) out.push({ ...e, sourceId: g.id, sourceTitle: g.title });
+    for (const e of linkedEntriesFor(g, goals, visited)) out.push(e);
   }
   return out;
 }
@@ -394,6 +425,21 @@ function goalTotal(goal, goals) {
   let sum = goalOwnProgress(goal);
   for (const e of linkedEntriesFor(goal, goals)) sum += e.value || 0;
   return sum;
+}
+/* How far along one goal is, 0..1 — partial for measurable goals, binary
+   for simple ones. Averaging these gives a bar that moves as work happens
+   instead of only when a goal is ticked off. */
+function goalFraction(goal, goals) {
+  if (!isMeasurable(goal)) return goal.completed ? 1 : 0;
+  const t = goal.targetValue || 0;
+  if (!t) return goal.completed ? 1 : 0;
+  return Math.max(0, Math.min(1, goalTotal(goal, goals) / t));
+}
+function goalsAggregatePct(list, goals) {
+  if (!list.length) return 0;
+  let s = 0;
+  for (const g of list) s += goalFraction(g, goals);
+  return (s / list.length) * 100;
 }
 function progressTextFor(goal, total) {
   const t = goal.targetValue || 0;
@@ -429,14 +475,18 @@ function recomputeGoals(goals) {
    ========================================================================= */
 
 function migrateHabit(h) {
-  if (h.entries && !h.completions) return h;
+  if (h.limits && h.entries && !h.completions) return h;
   const entries = { ...(h.entries || {}) };
   if (h.completions) for (const k in h.completions) if (h.completions[k]) entries[k] = entries[k] === undefined ? true : entries[k];
-  const out = {
-    metric: "simple", unit: null, dailyMin: null, dailyMax: null, weeklyMin: null, weeklyMax: null,
-    ...h, entries,
+  const limits = h.limits || {
+    daily: { min: h.dailyMin ?? null, max: h.dailyMax ?? null },
+    weekly: { min: h.weeklyMin ?? null, max: h.weeklyMax ?? null },
+    monthly: { min: null, max: null },
+    yearly: { min: null, max: null },
   };
+  const out = { metric: "simple", unit: null, ...h, entries, limits };
   delete out.completions;
+  delete out.dailyMin; delete out.dailyMax; delete out.weeklyMin; delete out.weeklyMax;
   return out;
 }
 function habitMeasured(habit) { return habit.metric === "count" || habit.metric === "time"; }
@@ -445,22 +495,71 @@ function habitDayValue(habit, dk) {
   if (v === undefined || v === null) return habitMeasured(habit) ? 0 : false;
   return v;
 }
+function habitLimit(habit, period) {
+  const l = (habit.limits || {})[period];
+  return l ? { min: l.min ?? null, max: l.max ?? null } : { min: null, max: null };
+}
+function hasLimit(habit, period) {
+  const l = habitLimit(habit, period);
+  return l.min !== null || l.max !== null;
+}
+/* One raw amount for a day. A simple habit contributes 1 per completed day,
+   which is what makes "at least 4 per week" mean four days for a simple
+   habit and four units for a measured one, with no special-casing. */
+function habitAmount(habit, dk) {
+  const v = (habit.entries || {})[dk];
+  if (v === undefined || v === null || v === false) return 0;
+  return v === true ? 1 : v;
+}
+/* Inclusive dateKey bounds for the period containing `today`. Periods never
+   run past today, so an in-progress week isn't judged on days that haven't
+   happened. */
+function periodRange(period, today) {
+  const tk = dateKey(today.jy, today.jm, today.jd);
+  if (period === "daily") return { from: tk, to: tk };
+  if (period === "weekly") {
+    const ws = getWeekStart(today.jy, today.jm, today.jd);
+    return { from: dateKey(ws.jy, ws.jm, ws.jd), to: tk };
+  }
+  if (period === "monthly") return { from: dateKey(today.jy, today.jm, 1), to: tk };
+  return { from: dateKey(today.jy, 1, 1), to: tk };
+}
+function habitPeriodSum(habit, period, today) {
+  const { from, to } = periodRange(period, today);
+  let sum = 0;
+  for (const dk in (habit.entries || {})) {
+    if (dk >= from && dk <= to) sum += habitAmount(habit, dk);
+  }
+  return sum;
+}
+/* "over" and "under" both render red — the user asked to see any breach of
+   the allowed range at a glance, including a minimum not yet reached. */
+function limitStatus(total, limit) {
+  if (limit.min === null && limit.max === null) return "none";
+  if (limit.max !== null && total > limit.max) return "over";
+  if (limit.min !== null && total < limit.min) return "under";
+  return "ok";
+}
+function habitPeriodStatus(habit, period, today) {
+  if (!hasLimit(habit, period)) return { status: "none", total: 0, limit: habitLimit(habit, period) };
+  const total = habitPeriodSum(habit, period, today);
+  const limit = habitLimit(habit, period);
+  return { status: limitStatus(total, limit), total, limit };
+}
 function habitDaySuccess(habit, dk) {
+  const limit = habitLimit(habit, "daily");
   const raw = (habit.entries || {})[dk];
-  if (!habitMeasured(habit)) return !!raw;
-  const v = (raw === undefined || raw === null) ? 0 : raw;
-  const hasMin = habit.dailyMin !== null && habit.dailyMin !== undefined;
-  const hasMax = habit.dailyMax !== null && habit.dailyMax !== undefined;
-  if (!hasMin && !hasMax) return v > 0;
-  if (hasMin && v < habit.dailyMin) return false;
-  if (hasMax && v > habit.dailyMax) return false;
-  return true;
+  if (limit.min === null && limit.max === null) {
+    if (!habitMeasured(habit)) return !!raw;
+    return habitAmount(habit, dk) > 0;
+  }
+  // A limit-only habit is satisfied by a day with nothing recorded: no
+  // record means zero, and zero is under the cap.
+  return limitStatus(habitAmount(habit, dk), limit) === "ok";
 }
 function habitStreak(habit, today) {
   let streak = 0;
   let cur = today;
-  // Today counts only once it already qualifies, so an unfinished day
-  // doesn't look like a broken streak first thing in the morning.
   while (habitDaySuccess(habit, dateKey(cur.jy, cur.jm, cur.jd))) {
     streak += 1;
     cur = addDaysJalali(cur.jy, cur.jm, cur.jd, -1);
@@ -474,22 +573,32 @@ function habitWeekDays(habit, today) {
   for (let i = 0; i < 7; i++) {
     const d = addDaysJalali(ws.jy, ws.jm, ws.jd, i);
     const dk = dateKey(d.jy, d.jm, d.jd);
-    if (dk > todayKey) break; // don't credit days that haven't happened
+    if (dk > todayKey) break;
     elapsed += 1;
     if (habitDaySuccess(habit, dk)) days += 1;
   }
   return { days, elapsed };
 }
+/* Units follow the habit's own metric: a simple habit counts days, a count
+   habit counts its unit, a time habit is formatted as hours and minutes. */
+function habitUnitLabel(habit) {
+  if (!habitMeasured(habit)) return "روز";
+  return habit.metric === "count" ? (habit.unit || "") : "";
+}
+function habitFormatAmount(habit, v) {
+  if (habit.metric === "time") return formatMinutes(v);
+  const u = habitUnitLabel(habit);
+  return `${toFa(v)}${u ? " " + u : ""}`;
+}
 function habitTargetText(habit) {
   const parts = [];
-  const unit = habit.metric === "time" ? null : habit.unit;
-  const fmt = (v) => habit.metric === "time" ? formatMinutes(v) : `${toFa(v)}${unit ? " " + unit : ""}`;
-  if (habit.dailyMin != null && habit.dailyMax != null) parts.push(`روزانه بین ${fmt(habit.dailyMin)} و ${fmt(habit.dailyMax)}`);
-  else if (habit.dailyMin != null) parts.push(`روزانه حداقل ${fmt(habit.dailyMin)}`);
-  else if (habit.dailyMax != null) parts.push(`روزانه حداکثر ${fmt(habit.dailyMax)}`);
-  if (habit.weeklyMin != null && habit.weeklyMax != null) parts.push(`هفته‌ای بین ${toFa(habit.weeklyMin)} و ${toFa(habit.weeklyMax)} روز`);
-  else if (habit.weeklyMin != null) parts.push(`هفته‌ای حداقل ${toFa(habit.weeklyMin)} روز`);
-  else if (habit.weeklyMax != null) parts.push(`هفته‌ای حداکثر ${toFa(habit.weeklyMax)} روز`);
+  for (const p of LIMIT_PERIODS) {
+    const l = habitLimit(habit, p.id);
+    if (l.min === null && l.max === null) continue;
+    if (l.min !== null && l.max !== null) parts.push(`${p.inLabel} بین ${habitFormatAmount(habit, l.min)} و ${habitFormatAmount(habit, l.max)}`);
+    else if (l.min !== null) parts.push(`حداقل ${p.inLabel} ${habitFormatAmount(habit, l.min)}`);
+    else parts.push(`حداکثر ${p.inLabel} ${habitFormatAmount(habit, l.max)}`);
+  }
   return parts.join(" · ");
 }
 
@@ -554,9 +663,10 @@ function formatPeriodKey(periodKey) {
 function findOverdueTasks(tasks, todayKey) {
   return tasks.filter((t) => !t.completed && t.dateKey < todayKey);
 }
-function findOverdueGoals(goals, curMonthKey, curWeekKey) {
+function findOverdueGoals(goals, curMonthKey, curWeekKey, curYearKey) {
   return goals.filter((g) => {
     if (g.completed) return false;
+    if (g.type === "yearly") return g.yearKey && g.yearKey < curYearKey;
     if (g.type === "monthly") return g.monthKey && g.monthKey < curMonthKey;
     if (g.type === "weekly") return g.weekKey && g.weekKey < curWeekKey;
     return false;
@@ -1071,6 +1181,27 @@ const GoalRow = memo(function GoalRow({ goal, total, linkedTitle, feedsCount, on
   );
 });
 
+/* Small chip per limited period. Red whenever the total sits outside the
+   allowed range — over the maximum, or short of the minimum. */
+function LimitChips({ habit, today }) {
+  const chips = LIMIT_PERIODS.map((p) => ({ p, ...habitPeriodStatus(habit, p.id, today) })).filter((x) => x.status !== "none");
+  if (!chips.length) return null;
+  return (
+    <div className="limit-chips">
+      {chips.map(({ p, status, total, limit }) => (
+        <span key={p.id} className={"limit-chip limit-" + status} title={`${p.inLabel}`}>
+          <span className="limit-chip-p">{p.label}</span>
+          {habitFormatAmount(habit, total)}
+          <span className="limit-chip-b">
+            {limit.min !== null && limit.max !== null ? `${toFa(limit.min)}–${toFa(limit.max)}`
+              : limit.min !== null ? `≥${toFa(limit.min)}` : `≤${toFa(limit.max)}`}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 const HabitRow = memo(function HabitRow({ habit, today, onToggle, onSetValue, onOpen, onOpenAmount }) {
   const tKey = dateKey(today.jy, today.jm, today.jd);
   const ok = habitDaySuccess(habit, tKey);
@@ -1079,8 +1210,7 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onSetValue, on
   const value = habitDayValue(habit, tKey);
   const categories = useContext(CategoriesContext);
   const palette = COLOR_PALETTE[categoryOf(categories, habit.category).colorKey] || COLOR_PALETTE.slate;
-  const { days, elapsed } = habitWeekDays(habit, today);
-  const hasWeekly = habit.weeklyMin != null || habit.weeklyMax != null;
+  const dayStatus = habitPeriodStatus(habit, "daily", today).status;
   const last7 = useMemo(() => {
     const start = addDaysJalali(today.jy, today.jm, today.jd, -6);
     return Array.from({ length: 7 }, (_, i) => addDaysJalali(start.jy, start.jm, start.jd, i));
@@ -1091,7 +1221,7 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onSetValue, on
       <CategoryEdge id={habit.category} />
       <div className="habit-top">
         {measured ? (
-          <span className={"status-dot" + (ok ? " status-dot-ok" : "")} aria-label={ok ? "در محدوده" : "خارج از محدوده"}>
+          <span className={"status-dot" + (ok ? " status-dot-ok" : dayStatus === "over" || dayStatus === "under" ? " status-dot-bad" : "")}>
             {ok && <Check size={12} strokeWidth={3} />}
           </span>
         ) : (
@@ -1106,20 +1236,24 @@ const HabitRow = memo(function HabitRow({ habit, today, onToggle, onSetValue, on
         {measured && habit.metric === "count" && (
           <div className="stepper">
             <button onClick={() => onSetValue(habit.id, tKey, Math.max(0, value - 1))} aria-label="کم کردن"><Minus size={13} /></button>
-            <button className="stepper-val" onClick={() => onOpenAmount(habit, value)}>{toFa(value)}{habit.unit ? ` ${habit.unit}` : ""}</button>
+            <button className={"stepper-val" + (dayStatus === "over" ? " val-bad" : "")} onClick={() => onOpenAmount(habit, value)}>
+              {toFa(value)}{habit.unit ? ` ${habit.unit}` : ""}
+            </button>
             <button onClick={() => onSetValue(habit.id, tKey, value + 1)} aria-label="زیاد کردن"><Plus size={13} /></button>
           </div>
         )}
         {measured && habit.metric === "time" && (
-          <button className="time-chip" onClick={() => onOpenAmount(habit, value)}><Clock size={12} />{formatMinutes(value)}</button>
+          <button className={"time-chip" + (dayStatus === "over" ? " time-chip-bad" : "")} onClick={() => onOpenAmount(habit, value)}>
+            <Clock size={12} />{formatMinutes(value)}
+          </button>
         )}
         {habit.reminderTime && <span className="reminder-badge"><Clock size={11} />{toFa(habit.reminderTime)}</span>}
       </div>
+      <LimitChips habit={habit} today={today} />
       <div className="habit-bottom">
         <div className="habit-streak">
           <Flame size={13} color={streak > 0 ? "var(--c-saffron)" : "var(--c-ink-faint)"} strokeWidth={2.4} />
           <span>{toFa(streak)} روز پیاپی</span>
-          {hasWeekly && <span className="habit-week">· این هفته {toFa(days)} از {toFa(elapsed)} روز</span>}
         </div>
         <div className="habit-dots">
           {last7.map((d) => {
@@ -1184,7 +1318,7 @@ function LogEntryRow({ entry, targetType, unit, todayKey, currentLabel = "امر
       </div>
       {open && (
         <>
-          {entry.sourceTitle && <p className="log-note-full log-src-full"><ArrowUpRight size={12} /> از هدف هفتگی «{entry.sourceTitle}» — برای تغییر، همان‌جا ویرایشش کن.</p>}
+          {entry.sourceTitle && <p className="log-note-full log-src-full"><ArrowUpRight size={12} /> از هدف «{entry.sourceTitle}» — برای تغییر، همان‌جا ویرایشش کن.</p>}
           {hasNote && <p className="log-note-full">{entry.note}</p>}
           {(onEdit || onDelete) && (
             <div className="log-row-actions">
@@ -1209,9 +1343,7 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
   const ownSum = goalOwnProgress(goal);
   const fedSum = total - ownSum;
 
-  const periodText = goal.type === "monthly"
-    ? (() => { const [jy, jm] = goal.monthKey.split("-").map(Number); return `${PERSIAN_MONTHS[jm - 1]} ${toFa(jy)}`; })()
-    : (() => { const [jy, jm, jd] = goal.weekKey.split("-").map(Number); const end = addDaysJalali(jy, jm, jd, 6); return `${toFa(jd)} ${PERSIAN_MONTHS[jm - 1]} تا ${toFa(end.jd)} ${PERSIAN_MONTHS[end.jm - 1]}`; })();
+  const periodText = goalPeriodText(goal);
 
   const own = (goal.progressEntries || []).map((e) => ({ ...e }));
   const all = own.concat(fed).sort((a, b) => (a.dateKey < b.dateKey ? 1 : a.dateKey > b.dateKey ? -1 : 0));
@@ -1221,10 +1353,10 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
   return (
     <>
       <DetailField label="دسته‌بندی"><CategoryChip id={goal.category} /></DetailField>
-      <DetailField label="نوع">{goal.type === "monthly" ? "هدف ماهانه" : "هدف هفتگی"}</DetailField>
+      <DetailField label="نوع">{GOAL_TYPE_LABEL[goal.type] || "هدف"}</DetailField>
       <DetailField label="بازه">{periodText}</DetailField>
       {linked && <DetailField label="مرتبط با">{linked.title}{mismatch ? " (واحدها یکی نیست — پیشرفت منتقل نمی‌شود)" : ""}</DetailField>}
-      {fed.length > 0 && <DetailField label="ورودی‌ها">{toFa(fed.length)} ثبت از اهداف هفتگی مرتبط</DetailField>}
+      {fed.length > 0 && <DetailField label="ورودی‌ها">{toFa(fed.length)} ثبت از اهداف مرتبط</DetailField>}
       {goal.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(goal.reminderTime)}</DetailField>}
       {goal.rolloverCount > 0 && <DetailField label="انتقال">{toFa(goal.rolloverCount)} بار از بازهٔ قبل منتقل شده</DetailField>}
       {goal.description && <DetailField label="توضیحات"><span className="detail-desc">{goal.description}</span></DetailField>}
@@ -1238,7 +1370,7 @@ function GoalDetail({ goal, goals, today, onEdit, onDelete, onToggle, onLogProgr
           <ProgressBar value={progressPctFor(goal, total)} color={goal.completed ? "var(--c-success)" : "var(--c-primary)"} />
           {fedSum > 0 && (
             <p className="detail-split">
-              مستقیم: {formatAmount(goal.targetType, ownSum, goal.unit)} · از اهداف هفتگی: {formatAmount(goal.targetType, fedSum, goal.unit)}
+              مستقیم: {formatAmount(goal.targetType, ownSum, goal.unit)} · از اهداف مرتبط: {formatAmount(goal.targetType, fedSum, goal.unit)}
             </p>
           )}
           {goal.completed && <p className="detail-done-note"><Check size={13} /> به هدف رسیدی</p>}
@@ -1323,13 +1455,7 @@ function HabitDetail({ habit, today, onEdit, onDelete, onToggle, onSetValue }) {
   const palette = COLOR_PALETTE[categoryOf(categories, habit.category).colorKey] || COLOR_PALETTE.slate;
   const successCount = last30.filter((d) => habitDaySuccess(habit, dateKey(d.jy, d.jm, d.jd))).length;
 
-  const weeklyText = (() => {
-    if (habit.weeklyMin == null && habit.weeklyMax == null) return null;
-    let s = `${toFa(days)} روز موفق از ${toFa(elapsed)} روز گذشتهٔ این هفته`;
-    if (habit.weeklyMin != null) s += ` · حداقل ${toFa(habit.weeklyMin)}`;
-    if (habit.weeklyMax != null) s += ` · حداکثر ${toFa(habit.weeklyMax)}`;
-    return s;
-  })();
+  const limitRows = LIMIT_PERIODS.map((p) => ({ p, ...habitPeriodStatus(habit, p.id, today) })).filter((x) => x.status !== "none");
 
   const targetDay = editDay || tKey;
   const targetVal = habitDayValue(habit, targetDay);
@@ -1338,18 +1464,37 @@ function HabitDetail({ habit, today, onEdit, onDelete, onToggle, onSetValue }) {
     <>
       <DetailField label="دسته‌بندی"><CategoryChip id={habit.category} /></DetailField>
       <DetailField label="نوع">{(HABIT_METRICS.find((m) => m.id === (habit.metric || "simple")) || {}).label}</DetailField>
-      {habitTargetText(habit) && <DetailField label="محدوده">{habitTargetText(habit)}</DetailField>}
       <DetailField label="روزهای پیاپی">{toFa(streak)} روز</DetailField>
-      {weeklyText && <DetailField label="این هفته">{weeklyText}</DetailField>}
+      <DetailField label="این هفته">{toFa(days)} روز موفق از {toFa(elapsed)} روز گذشته</DetailField>
       <DetailField label="۳۰ روز اخیر">{toFa(successCount)} روز موفق</DetailField>
       {habit.reminderTime && <DetailField label="یادآوری">هر روز ساعت {toFa(habit.reminderTime)}</DetailField>}
       {habit.description && <DetailField label="توضیحات"><span className="detail-desc">{habit.description}</span></DetailField>}
+
+      {limitRows.length > 0 && (
+        <>
+          <span className="detail-label detail-log-title">محدودیت‌ها</span>
+          <ul className="limit-list">
+            {limitRows.map(({ p, status, total, limit }) => (
+              <li key={p.id} className={"limit-line limit-" + status}>
+                <span className="limit-line-p">{p.inLabel}</span>
+                <span className="limit-line-v">{habitFormatAmount(habit, total)}</span>
+                <span className="limit-line-b">
+                  {limit.min !== null && limit.max !== null ? `مجاز: ${habitFormatAmount(habit, limit.min)} تا ${habitFormatAmount(habit, limit.max)}`
+                    : limit.min !== null ? `حداقل ${habitFormatAmount(habit, limit.min)}`
+                    : `حداکثر ${habitFormatAmount(habit, limit.max)}`}
+                </span>
+                <span className="limit-line-s">{status === "over" ? "بیش از حد" : status === "under" ? "کمتر از حد" : "در محدوده"}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
       <div className="detail-progress">
         <div className="detail-progress-head">
           <span>امروز</span>
           <b className={ok ? "val-ok" : "val-off"}>
-            {measured ? formatAmount(habit.metric, value, habit.unit) : (ok ? "انجام شده" : "انجام نشده")}
+            {measured ? habitFormatAmount(habit, value) : (ok ? "انجام شده" : "انجام نشده")}
             {measured && (ok ? " ✓" : "")}
           </b>
         </div>
@@ -1557,13 +1702,13 @@ function GoalForm({ initial, monthlyGoals, onSave }) {
 
       {monthlyGoals && monthlyGoals.length > 0 && (
         <>
-          <label className="field-label">مرتبط با هدف ماهانه (اختیاری)</label>
+          <label className="field-label">مرتبط با هدف بالادست (اختیاری)</label>
           <select className="text-input" value={linkedMonthlyId} onChange={(e) => setLinkedMonthlyId(e.target.value)}>
             <option value="">بدون ارتباط</option>
-            {monthlyGoals.map((g) => <option key={g.id} value={g.id}>{g.title}</option>)}
+            {monthlyGoals.map((g) => <option key={g.id} value={g.id}>{(GOAL_TYPE_LABEL[g.type] || "").replace("هدف ", "")} — {g.title}</option>)}
           </select>
-          {willFeed && <p className="field-hint field-hint-ok">هر پیشرفتی که اینجا ثبت کنی، به هدف ماهانه هم اضافه می‌شود.</p>}
-          {unitClash && <p className="field-hint field-hint-warn">واحد این هدف با هدف ماهانه یکی نیست، پس پیشرفت منتقل نمی‌شود. برای انتقال، هر دو باید «{parent.targetType === "time" ? "زمانی" : "تعدادی"}» باشند.</p>}
+          {willFeed && <p className="field-hint field-hint-ok">هر پیشرفتی که اینجا ثبت کنی، به {(GOAL_TYPE_LABEL[parent.type] || "هدف بالادست").replace("هدف ", "هدف ")} هم اضافه می‌شود.</p>}
+          {unitClash && <p className="field-hint field-hint-warn">واحد این هدف با هدف بالادست یکی نیست، پس پیشرفت منتقل نمی‌شود. برای انتقال، هر دو باید «{parent.targetType === "time" ? "زمانی" : "تعدادی"}» باشند.</p>}
         </>
       )}
 
@@ -1621,21 +1766,45 @@ function TaskForm({ initial, goals, onSave }) {
   );
 }
 
+/* One period's min and max. The unit is never typed here — it comes from the
+   habit's metric, so the label reads "حداقل در هفته" and the value is shown
+   in the habit's own unit. */
+function LimitRow({ period, habitLike, value, onChange }) {
+  const l = value || { min: null, max: null };
+  const set = (k, v) => onChange({ ...l, [k]: v });
+  return (
+    <div className="limit-row">
+      <div className="limit-row-head">{period.label}</div>
+      <div className="limit-row-fields">
+        <BoundInput label={`حداقل ${period.inLabel}`} metric={habitLike.metric === "simple" ? "count" : habitLike.metric}
+          unit={habitUnitLabel(habitLike)} value={l.min} onChange={(v) => set("min", v)} />
+        <BoundInput label={`حداکثر ${period.inLabel}`} metric={habitLike.metric === "simple" ? "count" : habitLike.metric}
+          unit={habitUnitLabel(habitLike)} value={l.max} onChange={(v) => set("max", v)} />
+      </div>
+    </div>
+  );
+}
+
 function HabitForm({ initial, onSave }) {
   const categories = useContext(CategoriesContext);
-  const [title, setTitle] = useState(initial?.title || "");
-  const [description, setDescription] = useState(initial?.description || "");
-  const [category, setCategory] = useState(initial?.category || categories[0]?.id || "");
-  const [metric, setMetric] = useState(initial?.metric || "simple");
-  const [unit, setUnit] = useState(initial?.unit || "");
-  const [dailyMin, setDailyMin] = useState(initial?.dailyMin ?? null);
-  const [dailyMax, setDailyMax] = useState(initial?.dailyMax ?? null);
-  const [weeklyMin, setWeeklyMin] = useState(initial?.weeklyMin ?? null);
-  const [weeklyMax, setWeeklyMax] = useState(initial?.weeklyMax ?? null);
-  const [reminderTime, setReminderTime] = useState(initial?.reminderTime || "");
+  const base = initial ? migrateHabit(initial) : null;
+  const [title, setTitle] = useState(base?.title || "");
+  const [description, setDescription] = useState(base?.description || "");
+  const [category, setCategory] = useState(base?.category || categories[0]?.id || "");
+  const [metric, setMetric] = useState(base?.metric || "simple");
+  const [unit, setUnit] = useState(base?.unit || "");
+  const [limits, setLimits] = useState(base?.limits || {
+    daily: { min: null, max: null }, weekly: { min: null, max: null },
+    monthly: { min: null, max: null }, yearly: { min: null, max: null },
+  });
+  const [reminderTime, setReminderTime] = useState(base?.reminderTime || "");
 
-  const boundsInvalid = (dailyMin != null && dailyMax != null && dailyMin > dailyMax)
-    || (weeklyMin != null && weeklyMax != null && weeklyMin > weeklyMax);
+  const habitLike = { metric, unit };
+  const invalid = LIMIT_PERIODS.some((p) => {
+    const l = limits[p.id] || {};
+    return l.min != null && l.max != null && l.min > l.max;
+  });
+  const onlyMax = LIMIT_PERIODS.some((p) => { const l = limits[p.id] || {}; return l.max != null && l.min == null; });
 
   return (
     <div className="form">
@@ -1646,8 +1815,12 @@ function HabitForm({ initial, onSave }) {
       <label className="field-label">دسته‌بندی</label>
       <CategoryPicker value={category} onChange={setCategory} />
 
-      <label className="field-label">نحوهٔ ثبت روزانه</label>
-      <Segmented options={HABIT_METRICS} value={metric} onChange={(v) => { setMetric(v); setDailyMin(null); setDailyMax(null); }} />
+      <label className="field-label">نحوهٔ ثبت</label>
+      <Segmented options={HABIT_METRICS} value={metric} onChange={setMetric} />
+      <p className="field-hint">{metric === "simple"
+        ? "هر روز فقط انجام‌شده یا نشده. محدودیت‌ها بر حسب «روز» شمرده می‌شوند."
+        : metric === "time" ? "هر روز یک مدت زمان ثبت می‌کنی. محدودیت‌ها بر حسب ساعت و دقیقه‌اند."
+        : "هر روز یک عدد ثبت می‌کنی. محدودیت‌ها بر حسب همین واحد شمرده می‌شوند."}</p>
 
       {metric === "count" && (
         <>
@@ -1656,34 +1829,22 @@ function HabitForm({ initial, onSave }) {
         </>
       )}
 
-      {metric !== "simple" && (
-        <>
-          <label className="field-label">محدودهٔ روزانه</label>
-          <BoundInput label="حداقل روزانه" metric={metric} unit={unit} value={dailyMin} onChange={setDailyMin} />
-          <BoundInput label="حداکثر روزانه" metric={metric} unit={unit} value={dailyMax} onChange={setDailyMax} />
-          {dailyMax != null && dailyMin == null && (
-            <p className="field-hint">برای عادت‌های «کمتر از»، روزی که چیزی ثبت نکنی صفر حساب می‌شود و موفق است.</p>
-          )}
-        </>
-      )}
-
-      <label className="field-label">محدودهٔ هفتگی (روز)</label>
-      <BoundInput label="حداقل روز در هفته" metric="count" unit="روز" value={weeklyMin} onChange={(v) => setWeeklyMin(v == null ? null : Math.min(7, v))} />
-      <BoundInput label="حداکثر روز در هفته" metric="count" unit="روز" value={weeklyMax} onChange={(v) => setWeeklyMax(v == null ? null : Math.min(7, v))} />
-
-      {boundsInvalid && <p className="field-hint field-hint-warn">حداقل نمی‌تواند از حداکثر بزرگ‌تر باشد.</p>}
+      <label className="field-label">محدودیت‌ها</label>
+      {LIMIT_PERIODS.map((p) => (
+        <LimitRow key={p.id} period={p} habitLike={habitLike} value={limits[p.id]}
+          onChange={(v) => setLimits((prev) => ({ ...prev, [p.id]: v }))} />
+      ))}
+      {onlyMax && <p className="field-hint">برای محدودیت «حداکثر»، بازه‌ای که چیزی ثبت نکنی صفر حساب می‌شود و مجاز است.</p>}
+      {invalid && <p className="field-hint field-hint-warn">حداقل نمی‌تواند از حداکثر بزرگ‌تر باشد.</p>}
 
       <label className="field-label"><Bell size={12} /> یادآوری روزانه (اختیاری)</label>
       <input type="time" className="text-input" value={reminderTime} onChange={(e) => setReminderTime(e.target.value)} />
 
-      <button className="primary-btn" disabled={!title.trim() || boundsInvalid}
-        onClick={() => title.trim() && !boundsInvalid && onSave({
+      <button className="primary-btn" disabled={!title.trim() || invalid}
+        onClick={() => title.trim() && !invalid && onSave({
           title: title.trim(), description: description.trim() || null, category,
           metric, unit: metric === "count" ? (unit.trim() || null) : null,
-          dailyMin: metric === "simple" ? null : dailyMin,
-          dailyMax: metric === "simple" ? null : dailyMax,
-          weeklyMin, weeklyMax,
-          reminderTime: reminderTime || null,
+          limits, reminderTime: reminderTime || null,
         })}>
         ذخیره
       </button>
@@ -1753,12 +1914,17 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
   const doneHabits = habits.filter((h) => habitDaySuccess(h, tKey)).length;
 
   const mKey = monthKey(today.jy, today.jm);
+  const yKey = yearKeyOf(today.jy);
   const monthlyGoals = goals.filter((g) => g.type === "monthly" && g.monthKey === mKey);
   const monthDone = monthlyGoals.filter((g) => g.completed).length;
   const weekStart = getWeekStart(today.jy, today.jm, today.jd);
   const wKey = dateKey(weekStart.jy, weekStart.jm, weekStart.jd);
   const weeklyGoals = goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
-  const weekDone = weeklyGoals.filter((g) => g.completed).length;
+  const yearlyGoals = goals.filter((g) => g.type === "yearly" && g.yearKey === yKey);
+  // Partial progress, not just finished count, so the bar moves as work lands.
+  const yearPct = goalsAggregatePct(yearlyGoals, goals);
+  const monthPct = goalsAggregatePct(monthlyGoals, goals);
+  const weekPct = goalsAggregatePct(weeklyGoals, goals);
 
   return (
     <div className="tab-pane">
@@ -1805,19 +1971,25 @@ function DashboardTab({ today, goals, tasks, habits, toggleTask, toggleHabit, se
         )}
       </section>
 
-      {(monthlyGoals.length > 0 || weeklyGoals.length > 0) && (
+      {(yearlyGoals.length > 0 || monthlyGoals.length > 0 || weeklyGoals.length > 0) && (
         <section className="section">
           <div className="section-head"><h3>پیشرفت اهداف</h3></div>
+          {yearlyGoals.length > 0 && (
+            <div className="goal-progress-row">
+              <div className="goal-progress-label"><span>هدف‌های سالانه</span><span className="goal-progress-pct">{toFa(Math.round(yearPct))}٪</span></div>
+              <ProgressBar value={yearPct} color="var(--c-plum)" />
+            </div>
+          )}
           {monthlyGoals.length > 0 && (
             <div className="goal-progress-row">
-              <div className="goal-progress-label">هدف‌های ماهانه</div>
-              <ProgressBar value={(monthDone / monthlyGoals.length) * 100} />
+              <div className="goal-progress-label"><span>هدف‌های ماهانه</span><span className="goal-progress-pct">{toFa(Math.round(monthPct))}٪</span></div>
+              <ProgressBar value={monthPct} />
             </div>
           )}
           {weeklyGoals.length > 0 && (
             <div className="goal-progress-row">
-              <div className="goal-progress-label">هدف‌های هفتگی</div>
-              <ProgressBar value={(weekDone / weeklyGoals.length) * 100} color="var(--c-saffron)" />
+              <div className="goal-progress-label"><span>هدف‌های هفتگی</span><span className="goal-progress-pct">{toFa(Math.round(weekPct))}٪</span></div>
+              <ProgressBar value={weekPct} color="var(--c-saffron)" />
             </div>
           )}
         </section>
@@ -1839,56 +2011,66 @@ function GoalsTab({ today, goals, addGoal, toggleGoal, openDetail, overdueGoals,
   const wKey = dateKey(weekStart.jy, weekStart.jm, weekStart.jd);
   const weekEnd = addDaysJalali(weekStart.jy, weekStart.jm, weekStart.jd, 6);
   const mKey = monthKey(cursor.jy, cursor.jm);
+  const yKey = yearKeyOf(cursor.jy);
 
-  const shown = mode === "monthly"
-    ? goals.filter((g) => g.type === "monthly" && g.monthKey === mKey)
-    : goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
-  const allMonthlyGoals = goals.filter((g) => g.type === "monthly");
+  const shown = mode === "yearly"
+    ? goals.filter((g) => g.type === "yearly" && g.yearKey === yKey)
+    : mode === "monthly"
+      ? goals.filter((g) => g.type === "monthly" && g.monthKey === mKey)
+      : goals.filter((g) => g.type === "weekly" && g.weekKey === wKey);
 
-  function goPrev() {
-    if (mode === "monthly") setCursor({ ...addMonthsJalali(cursor.jy, cursor.jm, -1), jd: 1 });
-    else setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, -7));
+  // Only goals a child of this type is allowed to feed.
+  const parentOptions = goals.filter((g) => (GOAL_PARENT_TYPES[mode] || []).includes(g.type));
+
+  function shift(dir) {
+    if (mode === "yearly") setCursor({ jy: cursor.jy + dir, jm: 1, jd: 1 });
+    else if (mode === "monthly") setCursor({ ...addMonthsJalali(cursor.jy, cursor.jm, dir), jd: 1 });
+    else setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, dir * 7));
   }
-  function goNext() {
-    if (mode === "monthly") setCursor({ ...addMonthsJalali(cursor.jy, cursor.jm, 1), jd: 1 });
-    else setCursor(addDaysJalali(cursor.jy, cursor.jm, cursor.jd, 7));
-  }
+
+  const periodLabel = mode === "yearly"
+    ? `سال ${toFa(cursor.jy)}`
+    : mode === "monthly"
+      ? `${PERSIAN_MONTHS[cursor.jm - 1]} ${toFa(cursor.jy)}`
+      : `${toFa(weekStart.jd)} ${PERSIAN_MONTHS[weekStart.jm - 1]} تا ${toFa(weekEnd.jd)} ${PERSIAN_MONTHS[weekEnd.jm - 1]}`;
+  const emptyText = mode === "yearly" ? "هدفی برای این سال ثبت نشده"
+    : mode === "monthly" ? "هدفی برای این ماه ثبت نشده" : "هدفی برای این هفته ثبت نشده";
+  const newTitle = mode === "yearly" ? "هدف سالانهٔ جدید" : mode === "monthly" ? "هدف ماهانهٔ جدید" : "هدف هفتگی جدید";
 
   return (
     <div className="tab-pane">
       <RolloverBanner count={overdueGoals.length} label="هدف ناتمام از بازه‌های گذشته" onRollover={rolloverGoals} />
-      <Segmented options={[{ id: "monthly", label: "ماهانه" }, { id: "weekly", label: "هفتگی" }]} value={mode} onChange={setMode} />
+      <Segmented options={[{ id: "yearly", label: "سالانه" }, { id: "monthly", label: "ماهانه" }, { id: "weekly", label: "هفتگی" }]} value={mode} onChange={setMode} />
 
       <div className="period-nav">
-        <IconBtn onClick={goPrev} label="قبلی"><ChevronRight size={18} /></IconBtn>
-        <span className="period-label">
-          {mode === "monthly" ? `${PERSIAN_MONTHS[cursor.jm - 1]} ${toFa(cursor.jy)}` : `${toFa(weekStart.jd)} ${PERSIAN_MONTHS[weekStart.jm - 1]} تا ${toFa(weekEnd.jd)} ${PERSIAN_MONTHS[weekEnd.jm - 1]}`}
-        </span>
-        <IconBtn onClick={goNext} label="بعدی"><ChevronLeft size={18} /></IconBtn>
+        <IconBtn onClick={() => shift(-1)} label="قبلی"><ChevronRight size={18} /></IconBtn>
+        <span className="period-label">{periodLabel}</span>
+        <IconBtn onClick={() => shift(1)} label="بعدی"><ChevronLeft size={18} /></IconBtn>
       </div>
 
       {shown.length === 0 ? (
-        <EmptyState text={mode === "monthly" ? "هدفی برای این ماه ثبت نشده" : "هدفی برای این هفته ثبت نشده"} sub="با دکمهٔ زیر یک هدف اضافه کن" />
+        <EmptyState text={emptyText} sub="با دکمهٔ زیر یک هدف اضافه کن" />
       ) : (
         <ul className="list">
           {shown.map((g) => (
             <GoalRow key={g.id} goal={g} total={goalTotal(g, goals)}
               linkedTitle={g.linkedMonthlyId ? goals.find((m) => m.id === g.linkedMonthlyId)?.title : null}
-              feedsCount={g.type === "monthly" ? goals.filter((x) => x.linkedMonthlyId === g.id && x.targetType === g.targetType).length : 0}
+              feedsCount={goals.filter((x) => x.linkedMonthlyId === g.id && x.targetType === g.targetType).length}
               onToggle={toggleGoal} onOpen={openDetail} />
           ))}
         </ul>
       )}
 
       <button className="fab" onClick={() => setSheetOpen(true)} aria-label="افزودن هدف"><Plus size={22} /></button>
-      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={mode === "monthly" ? "هدف ماهانهٔ جدید" : "هدف هفتگی جدید"}>
-        <GoalForm monthlyGoals={mode === "weekly" ? allMonthlyGoals : null}
+      <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={newTitle}>
+        <GoalForm monthlyGoals={parentOptions.length ? parentOptions : null}
           onSave={(data) => {
             addGoal({
               id: uid(), ...data, type: mode,
+              yearKey: mode === "yearly" ? yKey : null,
               monthKey: mode === "monthly" ? mKey : null,
               weekKey: mode === "weekly" ? wKey : null,
-              linkedMonthlyId: mode === "weekly" ? data.linkedMonthlyId : null,
+              linkedMonthlyId: mode === "yearly" ? null : data.linkedMonthlyId,
               completed: false, progressEntries: [], rolloverCount: 0, lastReminderKey: null,
             });
             setSheetOpen(false);
@@ -2286,6 +2468,7 @@ const APP_CSS = `
     --c-border: #E4E2DC;
     --c-border-soft: #EFEDE8;
     --c-track: #ECEAE4;
+    --c-on-accent: #FFFFFF;
     --c-primary: #2A4374;   --c-primary-soft: #E7ECF6;
     --c-saffron: #B37C28;   --c-saffron-soft: #F6EBD8;
     --c-success: #35705F;   --c-success-soft: #E1EFEA;
@@ -2301,7 +2484,7 @@ const APP_CSS = `
 
     font-family: 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
     background: var(--c-bg); color: var(--c-ink);
-    max-width: 460px; margin: 0 auto; min-height: 100vh; position: relative;
+    max-width: 460px; margin: 0 auto; min-height: 100vh; min-height: 100dvh; position: relative;
     display: flex; flex-direction: column;
     letter-spacing: -0.01em;
   }
@@ -2317,6 +2500,7 @@ const APP_CSS = `
     --c-border: #2C3038;
     --c-border-soft: #23262D;
     --c-track: #2A2E36;
+    --c-on-accent: #10141A;
     --c-primary: #8AA7DF;   --c-primary-soft: #22304C;
     --c-saffron: #DBA55A;   --c-saffron-soft: #3A2E19;
     --c-success: #6DBFA4;   --c-success-soft: #1D332C;
@@ -2332,7 +2516,19 @@ const APP_CSS = `
     color-scheme: dark;
   }
 
-  .app-root button { font-family: inherit; cursor: pointer; color: inherit; }
+  /* Deliberately sets no colour: ".app-root button" (0,1,1) outranks every
+     single-class rule like .primary-btn (0,1,0), so putting "color: inherit"
+     here silently repaints every blue button's label dark. Buttons that are
+     really just text containers opt into inherit explicitly below. */
+  .app-root button { font-family: inherit; cursor: pointer; }
+  .app-root .row-body,
+  .app-root .log-row-btn,
+  .app-root .day-chip,
+  .app-root .dpk-chip,
+  .app-root .big-stepper button,
+  .app-root .mini-btn,
+  .app-root .secondary-btn,
+  .app-root .toggle-big-btn { color: var(--c-ink); }
   .app-root :focus-visible { outline: 2px solid var(--c-primary); outline-offset: 2px; }
   .app-root input, .app-root select, .app-root textarea { font-family: inherit; color: var(--c-ink); }
 
@@ -2351,12 +2547,12 @@ const APP_CSS = `
   .season-ring-label { font-size: 11.5px; color: var(--c-ink-soft); display: flex; align-items: center; gap: 6px; }
   .season-ring-label .dot { width: 3px; height: 3px; border-radius: 50%; background: var(--c-ink-faint); }
 
-  .tab-pane { padding: 16px 16px 96px; flex: 1; }
+  .tab-pane { padding: 16px 16px calc(112px + env(safe-area-inset-bottom, 0px)); flex: 1; }
 
   /* ---- banners & stats ---- */
   .rollover-banner { display: flex; align-items: center; gap: 8px; background: var(--c-saffron-soft); border: 1px solid var(--c-saffron); color: var(--c-saffron); border-radius: 13px; padding: 10px 12px; font-size: 12.5px; font-weight: 600; margin-bottom: 14px; }
   .rollover-banner span { flex: 1; }
-  .rollover-banner button { border: none; background: var(--c-saffron); color: var(--c-surface); border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 700; }
+  .rollover-banner button { border: none; background: var(--c-saffron); color: var(--c-on-accent); border-radius: 8px; padding: 6px 13px; font-size: 12px; font-weight: 700; }
 
   .stat-row { display: flex; gap: 9px; margin-bottom: 22px; }
   .stat-card { flex: 1; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 15px; padding: 13px 8px; display: flex; flex-direction: column; align-items: center; gap: 4px; box-shadow: var(--shadow-sm); }
@@ -2385,9 +2581,9 @@ const APP_CSS = `
   .row-progress .progress-track { flex: 1; height: 5px; }
   .row-progress-text { font-size: 10px; color: var(--c-ink-soft); font-weight: 700; white-space: nowrap; }
 
-  .check-circle { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: #fff; transition: all .15s ease; padding: 0; }
+  .check-circle { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-on-accent); transition: all .15s ease; padding: 0; }
   .check-circle-done { background: var(--c-success); border-color: var(--c-success); }
-  .status-dot { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px dashed var(--c-border); display: flex; align-items: center; justify-content: center; color: #fff; }
+  .status-dot { width: 22px; height: 22px; min-width: 22px; border-radius: 50%; border: 1.8px dashed var(--c-border); display: flex; align-items: center; justify-content: center; color: var(--c-on-accent); }
   .status-dot-ok { background: var(--c-success); border: 1.8px solid var(--c-success); }
 
   .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 600; white-space: nowrap; }
@@ -2407,10 +2603,11 @@ const APP_CSS = `
   .progress-track { width: 100%; height: 8px; border-radius: 5px; overflow: hidden; }
   .progress-fill { height: 100%; border-radius: 5px; transition: width .3s ease; }
   .goal-progress-row { margin-bottom: 12px; }
-  .goal-progress-label { font-size: 12px; color: var(--c-ink-soft); margin-bottom: 6px; font-weight: 500; }
+  .goal-progress-label { display: flex; align-items: baseline; justify-content: space-between; font-size: 12px; color: var(--c-ink-soft); margin-bottom: 6px; font-weight: 500; }
+  .goal-progress-pct { font-weight: 700; color: var(--c-ink); }
 
   .icon-btn { width: 32px; height: 32px; border-radius: 10px; border: 1px solid var(--c-border); background: var(--c-surface); display: flex; align-items: center; justify-content: center; color: var(--c-ink-soft); flex-shrink: 0; }
-  .icon-btn-solid { background: var(--c-primary); color: #fff; border-color: var(--c-primary); }
+  .icon-btn-solid { background: var(--c-primary); color: var(--c-on-accent); border-color: var(--c-primary); }
 
   .segmented { display: flex; background: var(--c-track); border-radius: 12px; padding: 3px; margin-bottom: 14px; gap: 3px; }
   .segmented button { flex: 1; border: none; background: none; padding: 8px 0; border-radius: 9px; font-size: 12.5px; font-weight: 600; color: var(--c-ink-soft); }
@@ -2427,8 +2624,8 @@ const APP_CSS = `
   .day-chip-num { font-size: 13px; font-weight: 700; }
   .day-chip-today { border-color: var(--c-saffron); }
   .day-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
-  .day-chip-active .day-chip-wd { color: rgba(255,255,255,0.78); }
-  .day-chip-active .day-chip-num { color: #fff; }
+  .day-chip-active .day-chip-wd { color: var(--c-on-accent); opacity: 0.75; }
+  .day-chip-active .day-chip-num { color: var(--c-on-accent); }
   .today-jump { display: block; margin: 0 auto 12px; }
 
   .habit-card { position: relative; background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 13px; padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; overflow: hidden; box-shadow: var(--shadow-sm); }
@@ -2438,9 +2635,13 @@ const APP_CSS = `
   .habit-week { color: var(--c-ink-faint); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .habit-dots { display: flex; gap: 4px; flex-shrink: 0; }
 
-  .fab { position: absolute; bottom: 84px; inset-inline-end: 18px; width: 52px; height: 52px; border-radius: 50%; background: var(--c-primary); color: #fff; border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(42,67,116,0.34); z-index: 5; }
+  /* Fixed rather than absolute: an absolutely-positioned FAB scrolls with the
+     page and drifts over the nav bar. z-index stays below .bottom-nav. */
+  .fab { position: fixed; bottom: calc(86px + env(safe-area-inset-bottom, 0px)); inset-inline-end: max(18px, calc(50vw - 212px)); width: 52px; height: 52px; border-radius: 50%; background: var(--c-primary); color: var(--c-on-accent); border: none; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 18px rgba(42,67,116,0.34); z-index: 30; }
 
-  .bottom-nav { position: sticky; bottom: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 6px 3px 8px; max-width: 460px; margin: 0 auto; width: 100%; }
+  /* Fixed, not sticky: sticky inside a flex column detaches when the mobile
+     URL bar resizes the viewport mid-scroll. */
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--c-surface); border-top: 1px solid var(--c-border-soft); padding: 6px 3px calc(8px + env(safe-area-inset-bottom, 0px)); max-width: 460px; margin: 0 auto; width: 100%; z-index: 40; }
   .nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; padding: 2px 0; color: var(--c-ink-faint); border-radius: 12px; }
   .nav-icon-wrap { display: flex; align-items: center; justify-content: center; width: 40px; height: 26px; border-radius: 999px; transition: background .15s ease; }
   .nav-label { font-size: 9.5px; font-weight: 600; }
@@ -2448,8 +2649,8 @@ const APP_CSS = `
   .nav-btn-active .nav-icon-wrap { background: var(--c-primary-soft); }
 
   /* ---- sheets & forms ---- */
-  .sheet-backdrop { position: fixed; inset: 0; background: rgba(10,11,13,0.5); display: flex; align-items: flex-end; justify-content: center; z-index: 50; }
-  .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 22px 22px 0 0; padding: 8px 18px 24px; max-height: 88vh; overflow-y: auto; box-shadow: var(--shadow-lg); }
+  .sheet-backdrop { position: fixed; inset: 0; background: rgba(10,11,13,0.5); display: flex; align-items: flex-end; justify-content: center; z-index: 60; }
+  .sheet { background: var(--c-surface); width: 100%; max-width: 460px; border-radius: 22px 22px 0 0; padding: 8px 18px calc(24px + env(safe-area-inset-bottom, 0px)); max-height: 88vh; max-height: 88dvh; overflow-y: auto; box-shadow: var(--shadow-lg); }
   .sheet-grab { width: 36px; height: 4px; border-radius: 2px; background: var(--c-border); margin: 0 auto 10px; }
   .sheet-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
   .sheet-title { font-size: 15.5px; font-weight: 800; letter-spacing: -0.02em; }
@@ -2463,7 +2664,7 @@ const APP_CSS = `
   .text-input:focus { border-color: var(--c-primary); outline: none; }
   .cat-picker { display: flex; flex-wrap: wrap; gap: 7px; }
   .cat-picker-btn { display: flex; align-items: center; gap: 5px; padding: 7px 12px; border-radius: 999px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 12.5px; font-weight: 600; }
-  .primary-btn { margin-top: 16px; width: 100%; padding: 13px 0; border-radius: 13px; border: none; background: var(--c-primary); color: #fff; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .primary-btn { margin-top: 16px; width: 100%; padding: 13px 0; border-radius: 13px; border: none; background: var(--c-primary); color: var(--c-on-accent); font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
   .primary-btn:disabled { opacity: 0.4; }
   .secondary-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
   .danger-btn { margin-top: 10px; width: 100%; padding: 11px 0; border-radius: 12px; border: 1.5px solid var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
@@ -2493,8 +2694,8 @@ const APP_CSS = `
   .dpk-num-sm { font-size: 12px; }
   .dpk-mo { font-size: 9px; color: var(--c-ink-faint); }
   .dpk-chip-active { background: var(--c-primary); border-color: var(--c-primary); }
-  .dpk-chip-active .dpk-wd, .dpk-chip-active .dpk-mo { color: rgba(255,255,255,0.8); }
-  .dpk-chip-active .dpk-num { color: #fff; }
+  .dpk-chip-active .dpk-wd, .dpk-chip-active .dpk-mo { color: var(--c-on-accent); opacity: 0.75; }
+  .dpk-chip-active .dpk-num { color: var(--c-on-accent); }
 
   /* ---- detail ---- */
   .detail-title { font-size: 17.5px; font-weight: 800; margin: 0 0 14px; line-height: 1.5; letter-spacing: -0.02em; }
@@ -2526,11 +2727,11 @@ const APP_CSS = `
   .log-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
   .log-row-actions { display: flex; gap: 8px; margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--c-border); }
   .mini-btn { display: flex; align-items: center; gap: 4px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--c-border); background: var(--c-surface-2); font-size: 11.5px; font-weight: 700; }
-  .mini-btn-danger { background: var(--c-danger-soft); border-color: var(--c-danger); color: var(--c-danger); }
+  .app-root .mini-btn-danger { background: var(--c-danger-soft); border-color: var(--c-danger); color: var(--c-danger); }
   .chev-open { transform: rotate(180deg); }
 
   .toggle-big-btn { margin-top: 14px; width: 100%; padding: 12px 0; border-radius: 12px; border: 1.5px solid var(--c-border); background: var(--c-surface); font-size: 13.5px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; }
-  .toggle-big-done { background: var(--c-success-soft); border-color: var(--c-success); color: var(--c-success); }
+  .app-root .toggle-big-done { background: var(--c-success-soft); border-color: var(--c-success); color: var(--c-success); }
   .heatmap { display: grid; grid-template-columns: repeat(10, 1fr); gap: 4px; margin-bottom: 4px; }
   .heat-cell { display: block; width: 100%; aspect-ratio: 1; border-radius: 4px; }
 
@@ -2584,6 +2785,36 @@ const APP_CSS = `
   .group-summary-row span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .group-summary-val { font-weight: 700; color: var(--c-primary); white-space: nowrap; }
 
+  .limit-chips { display: flex; flex-wrap: wrap; gap: 5px; padding-inline-start: 31px; }
+  .limit-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; border-radius: 999px; padding: 3px 8px; background: var(--c-track); color: var(--c-ink-soft); white-space: nowrap; }
+  .limit-chip-p { color: var(--c-ink-faint); font-weight: 600; }
+  .limit-chip-b { color: var(--c-ink-faint); font-weight: 600; }
+  .limit-ok { background: var(--c-success-soft); color: var(--c-success); }
+  .limit-ok .limit-chip-p, .limit-ok .limit-chip-b { color: var(--c-success); opacity: 0.75; }
+  .limit-over, .limit-under { background: var(--c-danger-soft); color: var(--c-danger); }
+  .limit-over .limit-chip-p, .limit-over .limit-chip-b,
+  .limit-under .limit-chip-p, .limit-under .limit-chip-b { color: var(--c-danger); opacity: 0.8; }
+
+  .limit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+  .limit-line { display: grid; grid-template-columns: auto auto 1fr auto; align-items: center; gap: 8px; font-size: 11.5px; border: 1px solid var(--c-border); border-radius: 11px; padding: 9px 11px; background: var(--c-surface); }
+  .limit-line-p { font-weight: 700; color: var(--c-ink-soft); }
+  .limit-line-v { font-weight: 800; }
+  .limit-line-b { color: var(--c-ink-faint); font-size: 10.5px; }
+  .limit-line-s { font-weight: 700; font-size: 10.5px; white-space: nowrap; }
+  .limit-line.limit-ok { border-color: var(--c-success); background: var(--c-success-soft); color: var(--c-success); }
+  .limit-line.limit-over, .limit-line.limit-under { border-color: var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); }
+  .limit-line.limit-ok .limit-line-p, .limit-line.limit-ok .limit-line-b { color: var(--c-success); opacity: 0.8; }
+  .limit-line.limit-over .limit-line-p, .limit-line.limit-over .limit-line-b,
+  .limit-line.limit-under .limit-line-p, .limit-line.limit-under .limit-line-b { color: var(--c-danger); opacity: 0.85; }
+
+  .status-dot-bad { border: 1.8px solid var(--c-danger); background: var(--c-danger-soft); }
+  .val-bad { color: var(--c-danger) !important; }
+  .time-chip-bad { border-color: var(--c-danger); background: var(--c-danger-soft); color: var(--c-danger); }
+
+  .limit-row { border: 1px solid var(--c-border); border-radius: 12px; padding: 10px 11px; margin-bottom: 8px; background: var(--c-surface-2); }
+  .limit-row-head { font-size: 12px; font-weight: 800; margin-bottom: 8px; }
+  .limit-row-fields { display: flex; flex-direction: column; gap: 2px; }
+
   @media (prefers-reduced-motion: reduce) { .app-root * { transition: none !important; } }
 `;
 /* =========================================================================
@@ -2616,6 +2847,7 @@ function PlanningApp() {
   const curMonthKey = monthKey(today.jy, today.jm);
   const curWeekStart = getWeekStart(today.jy, today.jm, today.jd);
   const curWeekKey = dateKey(curWeekStart.jy, curWeekStart.jm, curWeekStart.jd);
+  const curYearKey = yearKeyOf(today.jy);
 
   useEffect(() => {
     const d = loadAll();
@@ -2814,7 +3046,7 @@ function PlanningApp() {
 
   /* ---- rollover ---- */
   const overdueTasks = useMemo(() => findOverdueTasks(tasks, todayKey), [tasks, todayKey]);
-  const overdueGoals = useMemo(() => findOverdueGoals(goals, curMonthKey, curWeekKey), [goals, curMonthKey, curWeekKey]);
+  const overdueGoals = useMemo(() => findOverdueGoals(goals, curMonthKey, curWeekKey, curYearKey), [goals, curMonthKey, curWeekKey, curYearKey]);
 
   const rolloverTasks = useCallback(() => {
     setTasks((prev) => {
@@ -2826,17 +3058,18 @@ function PlanningApp() {
   const rolloverGoals = useCallback(() => {
     commitGoals((prev) => prev.map((g) => {
       if (g.completed) return g;
+      if (g.type === "yearly" && g.yearKey && g.yearKey < curYearKey) return { ...g, yearKey: curYearKey, rolloverCount: (g.rolloverCount || 0) + 1 };
       if (g.type === "monthly" && g.monthKey && g.monthKey < curMonthKey) return { ...g, monthKey: curMonthKey, rolloverCount: (g.rolloverCount || 0) + 1 };
       if (g.type === "weekly" && g.weekKey && g.weekKey < curWeekKey) return { ...g, weekKey: curWeekKey, rolloverCount: (g.rolloverCount || 0) + 1 };
       return g;
     }));
-  }, [commitGoals, curMonthKey, curWeekKey]);
+  }, [commitGoals, curMonthKey, curWeekKey, curYearKey]);
 
   useEffect(() => {
     if (!loaded || didAutoRoll.current || !settings.autoRollover) return;
     didAutoRoll.current = true;
     if (findOverdueTasks(tasks, todayKey).length) rolloverTasks();
-    if (findOverdueGoals(goals, curMonthKey, curWeekKey).length) rolloverGoals();
+    if (findOverdueGoals(goals, curMonthKey, curWeekKey, curYearKey).length) rolloverGoals();
   }, [loaded, settings.autoRollover]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ---- reminders ---- */
@@ -2852,6 +3085,7 @@ function PlanningApp() {
       const dueHabits = cur.habits.filter((h) => h.reminderTime && !habitDaySuccess(h, todayKey) && h.lastReminderKey !== todayKey && h.reminderTime <= nowKey);
       const dueGoals = cur.goals.filter((g) => {
         if (!g.reminderTime || g.completed || g.lastReminderKey === todayKey || g.reminderTime > nowKey) return false;
+        if (g.type === "yearly") return g.yearKey === curYearKey;
         if (g.type === "monthly") return g.monthKey === curMonthKey;
         if (g.type === "weekly") return g.weekKey === curWeekKey;
         return false;
@@ -2881,7 +3115,7 @@ function PlanningApp() {
       setToast(all.length === 1 ? { title: all[0].title } : { title: `${toFa(all.length)} مورد (${all.map((a) => a.title).join("، ")})` });
     }, 20000);
     return () => clearInterval(interval);
-  }, [todayKey, curMonthKey, curWeekKey, commitGoals]);
+  }, [todayKey, curMonthKey, curWeekKey, curYearKey, commitGoals]);
 
   const allActiveGoals = useMemo(() => goals.filter((g) => !g.completed), [goals]);
   const visibleItems = useMemo(() => trackerItems.filter((i) => !i.archived), [trackerItems]);
@@ -3013,7 +3247,9 @@ function PlanningApp() {
 
         <Sheet open={!!editing} onClose={() => setEditing(null)} title={editing ? EDIT_TITLES[editing.kind] : ""}>
           {editing && editing.kind === "goal" && (
-            <GoalForm initial={editing.item} monthlyGoals={editing.item.type === "weekly" ? goals.filter((g) => g.type === "monthly") : null} onSave={saveEdit} />
+            <GoalForm initial={editing.item}
+              monthlyGoals={(() => { const opts = goals.filter((g) => (GOAL_PARENT_TYPES[editing.item.type] || []).includes(g.type)); return opts.length ? opts : null; })()}
+              onSave={saveEdit} />
           )}
           {editing && editing.kind === "task" && <TaskForm initial={editing.item} goals={allActiveGoals} onSave={saveEdit} />}
           {editing && editing.kind === "habit" && <HabitForm initial={editing.item} onSave={saveEdit} />}
